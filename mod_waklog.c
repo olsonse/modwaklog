@@ -155,7 +155,7 @@ command_rec waklog_cmds[ ] =
 
 
     static void
-pioctl_cleanup( void *data )
+token_cleanup( void *data )
 {
     request_rec		*r = (request_rec *)data;
 
@@ -172,28 +172,27 @@ pioctl_cleanup( void *data )
 
 
     static int
-waklog_ktinit( server_rec *s )
+waklog_kinit( server_rec *s )
 {
     krb5_error_code		kerror;
-    krb5_context		kcontext;
-    krb5_principal		kprinc;
+    krb5_context		kcontext = NULL;
+    krb5_principal		kprinc = NULL;
     krb5_get_init_creds_opt	kopts;
     krb5_creds			v5creds;
     CREDENTIALS			v4creds;
-    krb5_ccache			kccache;
-    krb5_keytab			keytab = 0;
+    krb5_ccache			kccache = NULL;
+    krb5_keytab			keytab = NULL;
     char			ktbuf[ MAX_KEYTAB_NAME_LEN + 1 ];
-    krb5_timestamp		now;
     waklog_host_config		*cfg;
 
     ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
-	"mod_waklog: waklog_ktinit called" );
+	"mod_waklog: waklog_kinit called" );
 
     if (( kerror = krb5_init_context( &kcontext ))) {
 	ap_log_error( APLOG_MARK, APLOG_ERR, s,
         	(char *)error_message( kerror ));
 
-        goto cleanup1;
+        goto cleanup;
     }
 
     /* use the path */
@@ -201,14 +200,14 @@ waklog_ktinit( server_rec *s )
 	ap_log_error( APLOG_MARK, APLOG_ERR, s,
 		(char *)error_message( kerror ));
 
-    	goto cleanup2;
+    	goto cleanup;
     }
 
    if (( kerror = krb5_parse_name( kcontext, PRINCIPAL, &kprinc ))) {
 	ap_log_error( APLOG_MARK, APLOG_ERR, s,
 		(char *)error_message( kerror ));
 
-       	goto cleanup3;
+       	goto cleanup;
     }
 
     krb5_get_init_creds_opt_init( &kopts );
@@ -227,17 +226,17 @@ waklog_ktinit( server_rec *s )
 	ap_log_error( APLOG_MARK, APLOG_ERR, s,
 		"server configuration error" );
 
-	goto cleanup4;
+	goto cleanup;
     }
 
     ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
-	    "mod_waklog: waklog_ktinit using: %s", ktbuf );
+	    "mod_waklog: waklog_kinit using: %s", ktbuf );
 
     if (( kerror = krb5_kt_resolve( kcontext, ktbuf, &keytab )) != 0 ) {
 	ap_log_error( APLOG_MARK, APLOG_ERR, s,
 		(char *)error_message( kerror ));
 
-    	goto cleanup4;
+    	goto cleanup;
     }
 
     /* get the krbtgt */
@@ -247,7 +246,7 @@ waklog_ktinit( server_rec *s )
 	ap_log_error( APLOG_MARK, APLOG_ERR, s,
 		(char *)error_message( kerror ));
 
-    	goto cleanup5;
+    	goto cleanup;
     }
 
    if (( kerror = krb5_verify_init_creds( kcontext, &v5creds,
@@ -256,38 +255,40 @@ waklog_ktinit( server_rec *s )
 	ap_log_error( APLOG_MARK, APLOG_ERR, s,
 		(char *)error_message( kerror ));
 
-    	goto cleanup6;
+    	goto cleanup;
     }
 
     if (( kerror = krb5_cc_initialize( kcontext, kccache, kprinc )) != 0 ) {
 	ap_log_error( APLOG_MARK, APLOG_ERR, s,
 		(char *)error_message( kerror ));
 
-    	goto cleanup6;
+    	goto cleanup;
     }
 
-    if (( kerror = krb5_cc_store_cred( kcontext, kccache, &v5creds )) != 0 ) {
+    kerror = krb5_cc_store_cred( kcontext, kccache, &v5creds );
+    krb5_free_cred_contents( kcontext, &v5creds );
+    if ( kerror != 0 ) {
 	ap_log_error( APLOG_MARK, APLOG_ERR, s,
 		(char *)error_message( kerror ));
 
-    	goto cleanup6;
+    	goto cleanup;
     }
 
     ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
-	"mod_waklog: waklog_ktinit success" );
+	"mod_waklog: waklog_kinit success" );
 
-cleanup6: if ( v5creds.client == kprinc ) {
-	      v5creds.client = 0;
-	  }
-	  krb5_free_cred_contents( kcontext, &v5creds );
-cleanup5: (void)krb5_kt_close( kcontext, keytab );
-cleanup4: krb5_free_principal( kcontext, kprinc );
-cleanup3: krb5_cc_close( kcontext, kccache );
-cleanup2: krb5_free_context( kcontext );
-cleanup1:   
+cleanup:
+    if ( keytab )
+	(void)krb5_kt_close( kcontext, keytab );
+    if ( kprinc )
+	krb5_free_principal( kcontext, kprinc );
+    if ( kccache )
+	krb5_cc_close( kcontext, kccache );
+    if ( kcontext )
+	krb5_free_context( kcontext );
 
     ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
-	"mod_waklog: waklog_ktinit: exiting" );
+	"mod_waklog: waklog_kinit: exiting" );
 
     return( 0 );
 }
@@ -301,11 +302,11 @@ waklog_aklog( request_rec *r )
     const char          	*k4path = NULL;
     const char          	*k5path = NULL;
     krb5_error_code		kerror;
-    krb5_context		kcontext;
+    krb5_context		kcontext = NULL;
     krb5_creds			increds;
     krb5_creds			*v5credsp = NULL;
     CREDENTIALS			v4creds;
-    krb5_ccache			kccache;
+    krb5_ccache			kccache = NULL;
     struct ktc_principal	server = { "afs", "", "umich.edu" };
     struct ktc_principal	client;
     struct ktc_token		token;
@@ -319,7 +320,7 @@ waklog_aklog( request_rec *r )
     if ( !k5path || !k4path ) {   
 	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
 		"mod_waklog: waklog_aklog giving up" );
-	return;
+	goto cleanup;
     }
 
     /*
@@ -331,7 +332,7 @@ waklog_aklog( request_rec *r )
 	ap_log_error( APLOG_MARK, APLOG_ERR, r->server,
 		(char *)error_message( kerror ));
 
-	return;
+	goto cleanup;
     }
 
     memset( (char *)&increds, 0, sizeof(increds));
@@ -341,14 +342,14 @@ waklog_aklog( request_rec *r )
 	ap_log_error( APLOG_MARK, APLOG_ERR, r->server,
 		(char *)error_message( kerror ));
 
-	return;
+	goto cleanup;
     }
 
     if (( kerror = krb5_cc_resolve( kcontext, k5path, &kccache )) != 0 ) {
     	ap_log_error( APLOG_MARK, APLOG_ERR, r->server,
     		(char *)error_message( kerror ));
     
-        return;
+        goto cleanup;
     }
 
     /* set client part */
@@ -363,14 +364,14 @@ waklog_aklog( request_rec *r )
 		&increds, &v5credsp ) ) ) {
 	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
 	    "mod_waklog: krb5_get_credentials: %s", krb_err_txt[ kerror ] );
-	return;
+	goto cleanup;
     }
 
     /* get the V4 credentials */
     if (( kerror = krb524_convert_creds_kdc( kcontext, v5credsp, &v4creds ) ) ) {
 	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
 	    "mod_waklog: krb524_convert_creds_kdc: %s", krb_err_txt[ kerror ] );
-	return;
+	goto cleanup;
     }
 
     /* assemble the token */
@@ -434,16 +435,25 @@ waklog_aklog( request_rec *r )
 	memmove( &child->token, &token, sizeof( struct ktc_token ) );
 
 	/* we'll need to unlog when this connection is done. */
-	ap_register_cleanup( r->pool, (void *)r, pioctl_cleanup, ap_null_cleanup );
+	ap_register_cleanup( r->pool, (void *)r, token_cleanup, ap_null_cleanup );
     }
 
-    krb5_free_cred_contents( kcontext, v5credsp );
-    krb5_free_principal( kcontext, increds.client );
-    krb5_cc_close( kcontext, kccache );
-    krb5_free_context( kcontext );
+cleanup:
+    if ( v5credsp )
+	krb5_free_cred_contents( kcontext, v5credsp );
+    if ( increds.client )
+	krb5_free_principal( kcontext, increds.client );
+    if ( increds.server )
+	krb5_free_principal( kcontext, increds.server );
+    if ( kccache )
+	krb5_cc_close( kcontext, kccache );
+    if ( kcontext )
+	krb5_free_context( kcontext );
 
     ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
 	        "mod_waklog: finished with waklog_aklog" );
+
+    return;
 
 }
 
@@ -460,7 +470,7 @@ waklog_child_routine( void *s, child_info *pinfo )
     }
 
     while( 1 ) {
-	waklog_ktinit( s );
+	waklog_kinit( s );
 	sleep( 300 /* 10*60*60 - 5*60 */ );
     }
 
