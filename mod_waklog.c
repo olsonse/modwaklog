@@ -115,7 +115,7 @@ pioctl_cleanup( void *data )
 		"mod_waklog: unlog pioctl failed" );
     }
 
-    ap_log_error( APLOG_MARK, APLOG_ERR, r->server,
+    ap_log_error( APLOG_MARK, APLOG_DEBUG, r->server,
 	    "mod_waklog: unlog pioctl succeeded" );
     return;
 }
@@ -147,19 +147,24 @@ waklog_get_tokens( request_rec *r )
         return( DECLINED );
     }
 
-    if (( rc = get_ad_tkt( "afs", "", urealm, 255 )) != KSUCCESS ) {
-	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_INFO, r->server,
-		"mod_waklog: get_ad_tkt: %s", krb_err_txt[ rc ] );
-
-	/* user doesn't have tickets: use server's srvtab */
-
-	return OK;
-    }
-
     if (( rc = krb_get_cred( "afs", "", urealm, &cr )) != KSUCCESS ) {
 	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
 		"mod_waklog: krb_get_cred: %s", krb_err_txt[ rc ] );
-	return OK;
+
+	if (( rc = get_ad_tkt( "afs", "", urealm, 255 )) != KSUCCESS ) {
+	    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server,
+		    "mod_waklog: get_ad_tkt: %s", krb_err_txt[ rc ] );
+
+	    /* user doesn't have tickets: use server's srvtab */
+
+	    return OK;
+	}
+
+	if (( rc = krb_get_cred( "afs", "", urealm, &cr )) != KSUCCESS ) {
+	    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
+		    "mod_waklog: krb_get_cred: %s", krb_err_txt[ rc ] );
+	    return OK;
+	}
     }
 
     ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server,
@@ -209,8 +214,8 @@ waklog_get_tokens( request_rec *r )
     /* we'll need to unlog when this connection is done. */
     ap_register_cleanup( r->pool, (void *)r, pioctl_cleanup, ap_null_cleanup );
 
-ap_log_error( APLOG_MARK, APLOG_INFO|APLOG_NOERRNO, r->server,
-	"mod_waklog: done with token stuff" );
+    ap_log_error( APLOG_MARK, APLOG_DEBUG|APLOG_NOERRNO, r->server,
+	    "mod_waklog: finished with get_token" );
 
     return OK;
 }
