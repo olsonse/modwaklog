@@ -1,4 +1,4 @@
-ALL=	mod_afs.so
+ALL=	mod_waklog.so
 
 APXS=	apxs
 CC=	gcc
@@ -10,7 +10,7 @@ LIB=    -L/usr/local/krb5/lib \
 	-L/usr/local/openafs/lib/afs -lsys \
 	-L/usr/local/openafs/lib -lrx -llwp
 CFLAGS=	${DEF} ${INC} -DEAPI
-OBJ=	mod_afs.o lifetime.o version.o
+OBJ=	mod_waklog.o lifetime.o version.o
 
 all:	${ALL}
 
@@ -20,7 +20,7 @@ version.o : version.c
 	    -DVERSION=\"`cat VERSION`\" \
 	    -c version.c
 
-mod_afs.so:  ${OBJ}
+mod_waklog.so:  ${OBJ}
 	${APXS} -c ${LIB} ${OBJ}
 
 clean:
