@@ -52,22 +52,6 @@ waklog_child_config	child;
 
 
     static void *
-waklog_create_dir_config( pool *p, char *path )
-{
-    waklog_host_config *cfg;
-
-    cfg = (waklog_host_config *)ap_pcalloc( p, sizeof( waklog_host_config ));
-    cfg->configured = 0;
-    cfg->protect = 0;
-    cfg->keytab = KEYTAB;
-    cfg->keytab_principal = KEYTAB_PRINCIPAL;
-    cfg->afs_cell = AFS_CELL;
-
-    return( cfg );
-}
-
-
-    static void *
 waklog_create_server_config( pool *p, server_rec *s )
 {
     waklog_host_config *cfg;
@@ -625,8 +609,8 @@ waklog_new_connection( conn_rec *c ) {
 
 module MODULE_VAR_EXPORT waklog_module = {
     STANDARD_MODULE_STUFF, 
-    waklog_init,              /* module initializer                  */
-    waklog_create_dir_config, /* create per-dir    config structures */
+    waklog_init,           /* module initializer                  */
+    NULL, 		   /* create per-dir    config structures */
     NULL,                  /* merge  per-dir    config structures */
     waklog_create_server_config, /* create per-server config structures */
     NULL,                  /* merge  per-server config structures */
