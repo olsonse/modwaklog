@@ -20,6 +20,16 @@ struct ClearToken {
     long EndTimestamp;
 };
 
+    static void
+afs_init( server_rec *s, pool *p )
+{
+    extern char *version;
+
+    ap_log_error( APLOG_MARK, APLOG_INFO|APLOG_NOERRNO, s,
+	    "mod_afs: version %s initialized.", version );
+    return;
+}
+
 
     static void
 pioctl_cleanup( void *data )
@@ -70,10 +80,14 @@ get_afs_tokens( request_rec *r )
 	return OK;
     }
 
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server, "%s.%s@%s\n", cr.service, cr.instance, cr.realm );
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server, "%d %d %d\n", cr.lifetime, cr.kvno, cr.issue_date );
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server, "%s %s\n", cr.pname, cr.pinst );
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server, "%d\n", cr.ticket_st.length );
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server,
+	    "%s.%s@%s\n", cr.service, cr.instance, cr.realm );
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server,
+	    "%d %d %d\n", cr.lifetime, cr.kvno, cr.issue_date );
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server,
+	    "%s %s\n", cr.pname, cr.pinst );
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server,
+	    "%d\n", cr.ticket_st.length );
 
     s = buf;
     memmove( s, &cr.ticket_st.length, sizeof( int ));
@@ -121,7 +135,7 @@ ap_log_error( APLOG_MARK, APLOG_ERR, r->server, "done with token stuff\n" );
 
 module MODULE_VAR_EXPORT afs_module = {
     STANDARD_MODULE_STUFF, 
-    NULL,                  /* module initializer                  */
+    afs_init,              /* module initializer                  */
     NULL,                  /* create per-dir    config structures */
     NULL,                  /* merge  per-dir    config structures */
     NULL,                  /* create per-server config structures */
