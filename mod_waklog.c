@@ -21,11 +21,16 @@
 #include <asm/bitops.h>
 #include <sys/shm.h>
 
-#define KEYTAB_PATH "/home/drh/keytab.umweb.drhtest"
-#define PRINCIPAL "umweb/drhtest"
+#define KEYTAB			"/home/drh/keytab.umweb.drhtest"
+#define KEYTAB_PRINCIPAL	"umweb/drhtest"
 
-#define K5PATH "FILE:/tmp/waklog.creds.k5"
-#define K4PATH "/tmp/waklog.creds.k4"
+#define TKT_LIFE	10*60*60
+#define	SLEEP_TIME	5*60 /* should be TKT_LIFE */
+
+#define AFS_CELL	"umich.edu" /* NB: lower case */
+
+#define K5PATH		"FILE:/tmp/waklog.creds.k5"
+#define K4PATH		"/tmp/waklog.creds.k4"
 
 module waklog_module;
 
@@ -48,7 +53,58 @@ typedef struct {
 typedef struct {
 	struct ktc_token	token;
 } waklog_child_config;
-waklog_child_config	*child = NULL;
+waklog_child_config	child;
+
+void
+bin_dump( char *s, char *cp, int count )
+{
+    char *buffer;
+    char c;
+    int w;
+    int i;
+    long o;
+
+    o = 0;
+    buffer = cp;
+    while ( count > 0 ) {
+        c = 16;
+        if (c > count) {
+	    c = count;
+	}
+        sprintf( s, "%05lx:", o);
+	s += strlen(s);
+        w = 0;
+        for (i = 0; i < c/2; ++i) {
+            w += 5;
+            sprintf( s, " %04x", ((unsigned short *)buffer)[i]);
+	    s += strlen(s);
+	}
+        if (c & 1) {
+            w += 3;
+            sprintf( s, " %02x", buffer[c-1]);
+	    s += strlen(s);
+	}
+        while (w < 41) {
+            ++w;
+            sprintf( s, "%c", ' ');
+	    s += strlen(s);
+	}
+        for (i = 0; i < c; ++i) {
+            if (isprint(buffer[i])) {
+                    sprintf( s, "%c", buffer[i]);
+            } else {
+                    sprintf( s, ".");
+	    }
+	    s += strlen(s);
+	}
+        sprintf( s, "\n" );
+	s += strlen(s);
+        o += c;
+        buffer += c;
+        count -= c;
+    }
+    sprintf( s, "%05lx:\0", o );
+}
 
 
     static void *
@@ -59,9 +115,9 @@ waklog_create_dir_config( pool *p, char *path )
     cfg = (waklog_host_config *)ap_pcalloc( p, sizeof( waklog_host_config ));
     cfg->configured = 0;
     cfg->protect = 0;
-    cfg->keytab = 0;
-    cfg->keytab_principal = 0;
-    cfg->afs_cell = "umich.edu";
+    cfg->keytab = KEYTAB;
+    cfg->keytab_principal = KEYTAB_PRINCIPAL;
+    cfg->afs_cell = AFS_CELL;
 
     return( cfg );
 }
@@ -75,9 +131,9 @@ waklog_create_server_config( pool *p, server_rec *s )
     cfg = (waklog_host_config *)ap_pcalloc( p, sizeof( waklog_host_config ));
     cfg->configured = 0;
     cfg->protect = 0;
-    cfg->keytab = 0;
-    cfg->keytab_principal = 0;
-    cfg->afs_cell = "umich.edu";
+    cfg->keytab = KEYTAB;
+    cfg->keytab_principal = KEYTAB_PRINCIPAL;
+    cfg->afs_cell = AFS_CELL;
 
     return( cfg );
 }
@@ -122,15 +178,53 @@ set_waklog_use_keytab( cmd_parms *params, void *mconfig, char *file  )
 }
 
 
+    static const char *
+set_waklog_use_keytab_principal( cmd_parms *params, void *mconfig, char *file  )
+{
+    waklog_host_config          *cfg;
+
+    if ( params->path == NULL ) {
+        cfg = (waklog_host_config *) ap_get_module_config(
+                params->server->module_config, &waklog_module );
+    } else {
+        cfg = (waklog_host_config *)mconfig;
+    }
+
+    ap_log_error( APLOG_MARK, APLOG_INFO|APLOG_NOERRNO, params->server,
+	    "mod_waklog: using keytab_principal: %s", file );
+
+    cfg->keytab_principal = file;
+    cfg->configured = 1;
+    return( NULL );
+}
+
+
+    static const char *
+set_waklog_use_afs_cell( cmd_parms *params, void *mconfig, char *file  )
+{
+    waklog_host_config          *cfg;
+
+    if ( params->path == NULL ) {
+        cfg = (waklog_host_config *) ap_get_module_config(
+                params->server->module_config, &waklog_module );
+    } else {
+        cfg = (waklog_host_config *)mconfig;
+    }
+
+    ap_log_error( APLOG_MARK, APLOG_INFO|APLOG_NOERRNO, params->server,
+	    "mod_waklog: using afs_cell: %s", file );
+
+    cfg->afs_cell = file;
+    cfg->configured = 1;
+    return( NULL );
+}
+
+
     static void
 waklog_child_init( server_rec *s, pool *p )
 {
 
-    if ( child  == NULL ) {
-	child = (waklog_child_config *) ap_palloc( p, sizeof( waklog_child_config ) );
-    }
-
-    memset( &child->token, 0, sizeof( struct ktc_token ) );
+    memset( &child.token, 0, sizeof( struct ktc_token ) );
 
     setpag();
 
@@ -144,9 +238,17 @@ command_rec waklog_cmds[ ] =
     NULL, RSRC_CONF | ACCESS_CONF, FLAG,
     "enable waklog on a location or directory basis" },
 
-    { "WaklogUseKeytab", set_waklog_use_keytab,
+    { "WaklogUseKeytabPath", set_waklog_use_keytab,
     NULL, RSRC_CONF, TAKE1,
-    "Use the supplied keytab file rather than the user's TGT" },
+    "Use the supplied keytab rather than the default" },
+
+    { "WaklogUseKeytabPrincipal", set_waklog_use_keytab_principal,
+    NULL, RSRC_CONF, TAKE1,
+    "Use the supplied keytab principal rather than the default" },
+
+    { "WaklogUseAFSCell", set_waklog_use_afs_cell,
+    NULL, RSRC_CONF, TAKE1,
+    "Use the supplied AFS cell rather than the default" },
 
     { NULL }
 };
@@ -157,13 +259,13 @@ token_cleanup( void *data )
 {
     request_rec		*r = (request_rec *)data;
 
-    if ( child->token.ticketLen ) {
-	memset( &child->token, 0, sizeof( struct ktc_token ) );
+    if ( child.token.ticketLen ) {
+	memset( &child.token, 0, sizeof( struct ktc_token ) );
 
 	ktc_ForgetAllTokens();
 
 	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
-	    "mod_waklog: ktc_ForgetAllTokens succeeded" );
+	    "mod_waklog: ktc_ForgetAllTokens succeeded: pid: %d", getpid() );
     }
     return;
 }
@@ -177,7 +279,6 @@ waklog_kinit( server_rec *s )
     krb5_principal		kprinc = NULL;
     krb5_get_init_creds_opt	kopts;
     krb5_creds			v5creds;
-    CREDENTIALS			v4creds;
     krb5_ccache			kccache = NULL;
     krb5_keytab			keytab = NULL;
     char			ktbuf[ MAX_KEYTAB_NAME_LEN + 1 ];
@@ -185,6 +286,9 @@ waklog_kinit( server_rec *s )
 
     ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
 	"mod_waklog: waklog_kinit called" );
+
+    cfg = (waklog_host_config *) ap_get_module_config( s->module_config,
+	    &waklog_module );
 
     if (( kerror = krb5_init_context( &kcontext ))) {
 	ap_log_error( APLOG_MARK, APLOG_ERR, s,
@@ -201,7 +305,7 @@ waklog_kinit( server_rec *s )
     	goto cleanup;
     }
 
-   if (( kerror = krb5_parse_name( kcontext, PRINCIPAL, &kprinc ))) {
+   if (( kerror = krb5_parse_name( kcontext, cfg->keytab_principal, &kprinc ))) {
 	ap_log_error( APLOG_MARK, APLOG_ERR, s,
 		(char *)error_message( kerror ));
 
@@ -209,16 +313,13 @@ waklog_kinit( server_rec *s )
     }
 
     krb5_get_init_creds_opt_init( &kopts );
-    krb5_get_init_creds_opt_set_tkt_life( &kopts, 10*60*60 );
+    krb5_get_init_creds_opt_set_tkt_life( &kopts, TKT_LIFE );
     krb5_get_init_creds_opt_set_renew_life( &kopts, 0 );
     krb5_get_init_creds_opt_set_forwardable( &kopts, 1 );
     krb5_get_init_creds_opt_set_proxiable( &kopts, 0 );
 
-    cfg = (waklog_host_config *) ap_get_module_config( s->module_config,
-	    &waklog_module );
-
-    /* which keytab should we use? */
-    strncpy( ktbuf, cfg->keytab ? cfg->keytab : KEYTAB_PATH, sizeof( ktbuf ) - 1 );
+    /* keytab from config */
+    strncpy( ktbuf, cfg->keytab, sizeof( ktbuf ) - 1 );
 
     ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
 	    "mod_waklog: waklog_kinit using: %s", ktbuf );
@@ -289,19 +390,19 @@ cleanup:
 waklog_aklog( request_rec *r )
 {
     int				rc;
-    char			buf[ 1024 ];
+    char			buf[ 2048 ];
     const char          	*k4path = NULL;
     const char          	*k5path = NULL;
     krb5_error_code		kerror;
     krb5_context		kcontext = NULL;
     krb5_creds			increds;
     krb5_creds			*v5credsp = NULL;
-    CREDENTIALS			v4creds;
     krb5_ccache			kccache = NULL;
     struct ktc_principal	server = { "afs", "", "" };
     struct ktc_principal	client;
     struct ktc_token		token;
     waklog_host_config		*cfg;
+    int				buflen;
 
     k5path = ap_table_get( r->subprocess_env, "KRB5CCNAME" );
     k4path = ap_table_get( r->subprocess_env, "KRBTKFILE" );
@@ -327,8 +428,6 @@ waklog_aklog( request_rec *r )
 	goto cleanup;
     }
 
-    krb524_init_ets(kcontext);
-
     memset( (char *)&increds, 0, sizeof(increds));
 
     cfg = (waklog_host_config *) ap_get_module_config(
@@ -336,7 +435,7 @@ waklog_aklog( request_rec *r )
 
     /* afs/<cell> or afs */
     strncpy( buf, "afs", sizeof( buf ) - 1 );
-    if ( strcmp( cfg->afs_cell, "umich.edu" ) ) {
+    if ( strcmp( cfg->afs_cell, AFS_CELL ) ) {
 	strncat( buf, "/" ,		sizeof( buf ) - strlen( buf ) - 1 );
 	strncat( buf, cfg->afs_cell,	sizeof( buf ) - strlen( buf ) - 1 );
     }
@@ -371,51 +470,60 @@ waklog_aklog( request_rec *r )
 	goto cleanup;
     }
 
-    /* get the V4 credentials */
-    if (( kerror = krb524_convert_creds_kdc( kcontext, v5credsp, &v4creds ) ) ) {
+    /* don't overflor */
+    if ( v5credsp->ticket.length >= 344 ) {	/* from krb524d.c */
 	ap_log_error( APLOG_MARK, APLOG_ERR, r->server,
-	    "mod_waklog: krb524_convert_creds_kdc: %s", error_message( kerror ));
+	    "mod_waklog: ticket size (%d) to big to fake", v5credsp->ticket.length );
 	goto cleanup;
     }
 
     /* assemble the token */
-    token.kvno = v4creds.kvno;
-    token.startTime = v4creds.issue_date;
+    memset( &token, 0, sizeof( struct ktc_token ) );
+
+    token.startTime = v5credsp->times.starttime ? v5credsp->times.starttime : v5credsp->times.authtime;
     token.endTime = v5credsp->times.endtime;
-    memmove( &token.sessionKey, v4creds.session, 8 );
-    token.ticketLen = v4creds.ticket_st.length ;
-    memmove( token.ticket, v4creds.ticket_st.dat, token.ticketLen );
+    memmove( &token.sessionKey, v5credsp->keyblock.contents,  v5credsp->keyblock.length );
+    token.kvno = RXKAD_TKT_TYPE_KERBEROS_V5;
+    token.ticketLen = v5credsp->ticket.length;
+    memmove( token.ticket, v5credsp->ticket.data, token.ticketLen );
+
+    /*
+    ** bin_dump( buf, (char *) &token, token.ticketLen + 24 );
+    ** ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
+    ** 	"mod_waklog: token\n%s", buf );
+    */
 
     /* make sure we have to do this */
-    if ( child->token.kvno != token.kvno ||
-	    child->token.ticketLen != token.ticketLen ||
-	    memcmp( &child->token.sessionKey, &token.sessionKey,
-		    sizeof( token.sessionKey ) ) ||
-	    memcmp( child->token.ticket, token.ticket, token.ticketLen ) ) {
+    if ( child.token.kvno != token.kvno ||
+	    child.token.ticketLen != token.ticketLen ||
+	    (memcmp( &child.token.sessionKey, &token.sessionKey,
+		    sizeof( token.sessionKey ) )) ||
+	    (memcmp( child.token.ticket, token.ticket, token.ticketLen )) ) {
 
-	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
-		"mod_waklog: %s.%s@%s", v4creds.service, v4creds.instance,
-		v4creds.realm );
-	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
-		"mod_waklog: %d %d %d", v4creds.lifetime, v4creds.kvno,
-		v4creds.issue_date );
-	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
-		"mod_waklog: %s %s", v4creds.pname, v4creds.pinst );
-	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
-		"mod_waklog: %d", v4creds.ticket_st.length );
+	/*
+	** bin_dump( buf, (char *) &child.token, child.token.ticketLen + 24 );
+	** ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
+	**	"mod_waklog: child.token\n%s", buf );
+	*/
 
 	/* build the name */
-	strncpy( buf, v4creds.pname, sizeof( buf ) - 1 );
-	if ( v4creds.pinst[ 0 ] ) {
+	memmove( buf, v5credsp->client->data[0].data, v5credsp->client->data[0].length );
+	buf[ v5credsp->client->data[0].length ] = '\0';
+	if ( v5credsp->client->length > 1 ) {
 		strncat( buf, ".",		sizeof( buf ) - strlen( buf ) - 1 );
-		strncat( buf, v4creds.pinst,    sizeof( buf ) - strlen( buf ) - 1 );
+		buflen = strlen( buf );
+		memmove( buf + buflen, v5credsp->client->data[1].data, v5credsp->client->data[1].length );
+		buf[ buflen + v5credsp->client->data[1].length ] = '\0';
 	}
 
 	/* assemble the client */
 	strncpy( client.name, buf,		sizeof( client.name ) - 1 );
 	strncpy( client.instance, "",		sizeof( client.instance) - 1 );
-	strncpy( client.cell, v4creds.realm,	sizeof( client.cell ) - 1 );
+	memmove( buf, v5credsp->client->realm.data, v5credsp->client->realm.length );
+ 	buf[ v5credsp->client->realm.length ] = '\0';
+ 	strncpy( client.cell, buf,		sizeof( client.cell ) - 1 );
 
+	/* assemble the server's cell */
 	strncpy( server.cell, cfg->afs_cell ,	sizeof( server.cell ) - 1 );
 
 	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
@@ -433,12 +541,13 @@ waklog_aklog( request_rec *r )
 	write( 2, "", 0 );
 
 	if ( ( rc = ktc_SetToken( &server, &token, &client, 0 ) ) ) {
-	    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
+	    ap_log_error( APLOG_MARK, APLOG_ERR, r->server,
 		"mod_waklog: settoken returned %d", rc );
+	    goto cleanup;
 	}
 
 	/* save this */
-	memmove( &child->token, &token, sizeof( struct ktc_token ) );
+	memmove( &child.token, &token, sizeof( struct ktc_token ) );
 
 	/* we'll need to unlog when this connection is done. */
 	ap_register_cleanup( r->pool, (void *)r, token_cleanup, ap_null_cleanup );
@@ -477,7 +586,7 @@ waklog_child_routine( void *s, child_info *pinfo )
 
     while( 1 ) {
 	waklog_kinit( s );
-	sleep( 300 /* 10*60*60 - 5*60 */ );
+	sleep( SLEEP_TIME );
     }
 
 }
@@ -525,7 +634,7 @@ waklog_phase0( request_rec *r )
     }
 
     /* do this only if we are still unauthenticated */
-    if ( !child->token.ticketLen ) {
+    if ( !child.token.ticketLen ) {
 
 	/* set our environment variables */
 	ap_table_set( r->subprocess_env, "KRB5CCNAME", K5PATH );
@@ -575,7 +684,7 @@ waklog_phase7( request_rec *r )
     static void
 waklog_new_connection( conn_rec *c ) {
     ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, c->server,
-	"mod_waklog: new_connection called: conn_rec: 0x%08x pid: %d", c, getpid() );
+	"mod_waklog: new_connection called: pid: %d", getpid() );
     return;
 }
 
