@@ -12,18 +12,9 @@
 #include <sys/ioccom.h>
 #endif /* sun */
 #include <stropts.h>
-#if 0
-#include <kerberosIV/krb.h>
-#include <kerberosIV/des.h>
-#endif /* 0 */
 #include <afs/venus.h>
 #include <afs/auth.h>
 #include <rx/rxkad.h>
-
-#if 0
-#include <asm/bitops.h>
-#include <sys/shm.h>
-#endif /* 0 */
 
 #define KEYTAB			"/home/drh/keytab.umweb.drhtest"
 #define KEYTAB_PRINCIPAL	"umweb/drhtest"
