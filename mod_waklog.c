@@ -273,50 +273,6 @@ waklog_ktinit( server_rec *s )
     	goto cleanup6;
     }
 
-#if 0
-    /* convert K5 => K4 */
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
-	    "mod_waklog: before krb524_convert_creds" );
-
-    if (( kerror = krb524_convert_creds_kdc( kcontext,
-	    &v5creds, &v4creds )) != 0 ) {
-
-    	ap_log_error( APLOG_MARK, APLOG_ERR, s,
-		(char *)error_message( kerror ));
-
-    	goto cleanup6;
-    }
-
-    /* use the path */
-    krb_set_tkt_string( (char *)K4PATH );
-
-    /* initialize ticket cache */
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
-	    "mod_waklog: before in_tkt" );
-
-    if (( kerror = in_tkt( v4creds.pname, v4creds.pinst )) != KSUCCESS ) {
-	ap_log_error( APLOG_MARK, APLOG_ERR, s,
-		(char *)error_message( kerror ));
-
-    	goto cleanup6;
-    }
-
-    /* stash, ticket, session key, etc for future use */
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
-	    "mod_waklog: before krb_save_credentials" );
-
-    if (( kerror = krb_save_credentials( v4creds.service,
-	    v4creds.instance, v4creds.realm, v4creds.session,
-	    v4creds.lifetime, v4creds.kvno, &(v4creds.ticket_st),
-	    v4creds.issue_date )) != 0 ) {
-
-    	ap_log_error( APLOG_MARK, APLOG_ERR, s,
-    		(char *)error_message( kerror ));
-
-    	goto cleanup6;
-    }
-#endif /* 0 */
-
     ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
 	"mod_waklog: waklog_ktinit success" );
 
@@ -494,11 +450,8 @@ waklog_aklog( request_rec *r )
     static int
 waklog_child_routine( void *s, child_info *pinfo )
 {
-    ap_log_error( APLOG_MARK, APLOG_INFO|APLOG_NOERRNO, s,
-	    "mod_waklog: waklog_child_routine called" );
-
     if ( !getuid() ) {
-	ap_log_error( APLOG_MARK, APLOG_INFO|APLOG_NOERRNO, s,
+	ap_log_error( APLOG_MARK, APLOG_ERR|APLOG_NOERRNO, s,
 		"mod_waklog: waklog_child_routine called as root" );
 
 	/* this was causing the credential file to get owned by root */
@@ -508,7 +461,7 @@ waklog_child_routine( void *s, child_info *pinfo )
 
     while( 1 ) {
 	waklog_ktinit( s );
-	sleep( 60 /* 10*60*60 - 5*60 */ );
+	sleep( 300 /* 10*60*60 - 5*60 */ );
     }
 
 }
@@ -526,7 +479,7 @@ waklog_init( server_rec *s, pool *p )
     pid = ap_bspawn_child( p, waklog_child_routine, s, kill_always,
 	    NULL, NULL, NULL );
 
-    ap_log_error( APLOG_MARK, APLOG_INFO|APLOG_NOERRNO, s,
+    ap_log_error( APLOG_MARK, APLOG_ERR|APLOG_NOERRNO, s,
 	    "mod_waklog: ap_bspawn_child: %d.", pid );
 }
 
