@@ -221,7 +221,7 @@ token_cleanup( void *data )
 
 	ktc_ForgetAllTokens();
 
-	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
+	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server,
 	    "mod_waklog: ktc_ForgetAllTokens succeeded: pid: %d", getpid() );
     }
     return;
@@ -242,7 +242,7 @@ waklog_kinit( server_rec *s )
     waklog_host_config		*cfg;
     int				i;
 
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, s,
 	"mod_waklog: waklog_kinit called: pid: %d", getpid() );
 
     cfg = (waklog_host_config *) ap_get_module_config( s->module_config,
@@ -263,7 +263,7 @@ waklog_kinit( server_rec *s )
     	goto cleanup;
     }
 
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, s,
 	"mod_waklog: keytab_principal: %s", cfg->keytab_principal );
 
     if (( kerror = krb5_parse_name( kcontext, cfg->keytab_principal, &kprinc ))) {
@@ -274,13 +274,13 @@ waklog_kinit( server_rec *s )
     }
 
 #if 0
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, s,
 	"mod_waklog: kprinc->realm: %.*s", kprinc->realm.length, kprinc->realm.data );
 
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, s,
 	"mod_waklog: kprinc->length: %d", kprinc->length );
     for ( i = 0; i < kprinc->length; i++ ) {
-	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
+	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, s,
 		"mod_waklog: kprinc->data[%d].data: %.*s", i, kprinc->data[i].length, kprinc->data[i].data );
     }
 #endif /* 0 */
@@ -294,7 +294,7 @@ waklog_kinit( server_rec *s )
     /* keytab from config */
     strncpy( ktbuf, cfg->keytab, sizeof( ktbuf ) - 1 );
 
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, s,
 	    "mod_waklog: waklog_kinit using: %s", ktbuf );
 
     if (( kerror = krb5_kt_resolve( kcontext, ktbuf, &keytab )) != 0 ) {
@@ -317,32 +317,32 @@ waklog_kinit( server_rec *s )
     }
 
 #if 0
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, s,
 	"mod_waklog: v5creds.client->realm: %.*s", v5creds.client->realm.length, v5creds.client->realm.data );
 
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, s,
 	    "mod_waklog: v5creds.client->length: %d", v5creds.client->length );
     for ( i = 0; i < v5creds.client->length; i++ ) {
-	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
+	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, s,
 		"mod_waklog: v5creds.client->data[%d].data: %.*s",
 		i, v5creds.client->data[i].length, v5creds.client->data[i].data );
     }
 
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, s,
 	"mod_waklog: v5creds.server->realm: %.*s", v5creds.server->realm.length, v5creds.server->realm.data );
 
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, s,
 	"mod_waklog: v5creds.server->length: %d", v5creds.server->length );
     for ( i = 0; i < v5creds.server->length; i++ ) {
-	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
+	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, s,
 		"mod_waklog: v5creds.server->data[%d].data: %.*s",
 		i, v5creds.server->data[i].length, v5creds.server->data[i].data );
     }
 
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, s,
 	"mod_waklog: waklog_kinit #4" );
 
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, s,
 	    "mod_waklog: waklog_kinit kprinc==v5creds.server: %s", 
 	    krb5_principal_compare( kcontext, kprinc, v5creds.server ) ? "true" : "false" );
 #endif /* 0 */
@@ -375,7 +375,7 @@ waklog_kinit( server_rec *s )
     	goto cleanup;
     }
 
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, s,
 	"mod_waklog: waklog_kinit success" );
 
 cleanup:
@@ -388,7 +388,7 @@ cleanup:
     if ( kcontext )
 	krb5_free_context( kcontext );
 
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, s,
 	"mod_waklog: waklog_kinit: exiting" );
 
     return( 0 );
@@ -416,11 +416,11 @@ waklog_aklog( request_rec *r )
     k5path = ap_table_get( r->subprocess_env, "KRB5CCNAME" );
     k4path = ap_table_get( r->subprocess_env, "KRBTKFILE" );
 
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server,
 	"mod_waklog: waklog_aklog called: k5path: %s, k4path: %s", k5path, k4path );
 
     if ( !k5path || !k4path || !*k5path || !*k4path ) {
-	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
+	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server,
 		"mod_waklog: waklog_aklog giving up" );
 	goto cleanup;
     }
@@ -503,7 +503,7 @@ waklog_aklog( request_rec *r )
 		    sizeof( token.sessionKey ) )) ||
 	    (memcmp( child.token.ticket, token.ticket, token.ticketLen )) ) {
 
-	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
+	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server,
 		"mod_waklog: client: %s", buf );
 
 	/* build the name */
@@ -529,11 +529,11 @@ waklog_aklog( request_rec *r )
 	/* assemble the server's cell */
 	strncpy( server.cell, cfg->afs_cell ,	sizeof( server.cell ) - 1 );
 
-	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
+	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server,
 		"mod_waklog: server: name=%s, instance=%s, cell=%s",
 		server.name, server.instance, server.cell );
 
-	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
+	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server,
 		"mod_waklog: client: name=%s, instance=%s, cell=%s",
 		 client.name, client.instance, client.cell );
 
@@ -568,7 +568,7 @@ cleanup:
     if ( kcontext )
 	krb5_free_context( kcontext );
 
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server,
 	        "mod_waklog: finished with waklog_aklog" );
 
     return;
@@ -579,7 +579,7 @@ cleanup:
 waklog_child_routine( void *s, child_info *pinfo )
 {
     if ( !getuid() ) {
-	ap_log_error( APLOG_MARK, APLOG_ERR|APLOG_NOERRNO, s,
+	ap_log_error( APLOG_MARK, APLOG_DEBUG|APLOG_NOERRNO, s,
 		"mod_waklog: waklog_child_routine called as root" );
 
 	/* this was causing the credential file to get owned by root */
@@ -607,7 +607,7 @@ waklog_init( server_rec *s, pool *p )
     pid = ap_bspawn_child( p, waklog_child_routine, s, kill_always,
 	    NULL, NULL, NULL );
 
-    ap_log_error( APLOG_MARK, APLOG_ERR|APLOG_NOERRNO, s,
+    ap_log_error( APLOG_MARK, APLOG_DEBUG|APLOG_NOERRNO, s,
 	    "mod_waklog: ap_bspawn_child: %d.", pid );
 }
 
@@ -617,7 +617,7 @@ waklog_phase0( request_rec *r )
 {
     waklog_host_config  *cfg;
 
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server,
 	"mod_waklog: phase0 called" );
 
 #if 0
@@ -636,7 +636,7 @@ waklog_phase0( request_rec *r )
 #endif /* 0 */
 
     if ( !cfg->protect ) {
-	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
+	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server,
 	    "mod_waklog: phase0 declining" );
         return( DECLINED );
     }
@@ -652,7 +652,7 @@ waklog_phase0( request_rec *r )
 	waklog_aklog( r );
     }
     
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server,
 	"mod_waklog: phase0 returning" );
     return DECLINED;
 }
@@ -663,7 +663,7 @@ waklog_phase7( request_rec *r )
 {
     waklog_host_config	*cfg;
 
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server,
 	"mod_waklog: phase7 called" );
 
 #if 0
@@ -687,7 +687,7 @@ waklog_phase7( request_rec *r )
     /* stuff the credentials into the kernel */
     waklog_aklog( r );
 
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server,
 	"mod_waklog: phase7 returning" );
 
     return DECLINED;
@@ -695,7 +695,7 @@ waklog_phase7( request_rec *r )
 
     static void
 waklog_new_connection( conn_rec *c ) {
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, c->server,
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, c->server,
 	"mod_waklog: new_connection called: pid: %d", getpid() );
     return;
 }
@@ -713,7 +713,7 @@ waklog_new_connection( conn_rec *c ) {
     static int
 waklog_phase2( request_rec *r )
 {
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server,
 	    "mod_waklog: phase2 called" );
 
     if ( child.token.ticketLen ) {
@@ -721,11 +721,11 @@ waklog_phase2( request_rec *r )
 
 	ktc_ForgetAllTokens();
 
-	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
+	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server,
 	    "mod_waklog: ktc_ForgetAllTokens succeeded: pid: %d", getpid() );
     }
 
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server,
 	    "mod_waklog: phase2 returning" );
 
     return DECLINED;
@@ -734,37 +734,37 @@ waklog_phase2( request_rec *r )
 #if 0
 static int waklog_phase1( request_rec *r )
 {
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server, "mod_waklog: phase1 returning" );
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server, "mod_waklog: phase1 returning" );
     return DECLINED;
 }
 static int waklog_phase3( request_rec *r )
 {
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server, "mod_waklog: phase3 returning" );
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server, "mod_waklog: phase3 returning" );
     return DECLINED;
 }
 static int waklog_phase4( request_rec *r )
 {
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server, "mod_waklog: phase4 returning" );
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server, "mod_waklog: phase4 returning" );
     return DECLINED;
 }
 static int waklog_phase5( request_rec *r )
 {
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server, "mod_waklog: phase5 returning" );
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server, "mod_waklog: phase5 returning" );
     return DECLINED;
 }
 static int waklog_phase6( request_rec *r )
 {
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server, "mod_waklog: phase6 returning" );
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server, "mod_waklog: phase6 returning" );
     return DECLINED;
 }
 static void waklog_phase8( request_rec *r )
 {
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server, "mod_waklog: phase8 returning" );
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server, "mod_waklog: phase8 returning" );
     return;
 }
 static int waklog_phase9( request_rec *r )
 {
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server, "mod_waklog: phase9 returning" );
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server, "mod_waklog: phase9 returning" );
     return DECLINED;
 }
 #endif /* 0 */
