@@ -479,10 +479,10 @@ waklog_aklog( request_rec *r )
 	goto cleanup;
     }
 
-    /* don't overflor */
-    if ( v5credsp->ticket.length >= 344 ) {	/* from krb524d.c */
+    /* don't overflow */
+    if ( v5credsp->ticket.length >= MAXKTCTICKETLEN ) {	/* from krb524d.c */
 	ap_log_error( APLOG_MARK, APLOG_ERR, r->server,
-	    "mod_waklog: ticket size (%d) to big to fake", v5credsp->ticket.length );
+	    "mod_waklog: ticket size (%d) too big to fake", v5credsp->ticket.length );
 	goto cleanup;
     }
 
@@ -697,6 +697,60 @@ waklog_new_connection( conn_rec *c ) {
     return;
 }
 
+
+static int waklog_phase2( request_rec *r )
+{
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server, "mod_waklog: phase2 called" );
+    if ( child.token.ticketLen ) {
+	memset( &child.token, 0, sizeof( struct ktc_token ) );
+
+	ktc_ForgetAllTokens();
+
+	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
+	    "mod_waklog: ktc_ForgetAllTokens succeeded: pid: %d", getpid() );
+    }
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server, "mod_waklog: phase2 returning" );
+    return DECLINED;
+}
+
+#if 0
+static int waklog_phase1( request_rec *r )
+{
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server, "mod_waklog: phase1 returning" );
+    return DECLINED;
+}
+static int waklog_phase3( request_rec *r )
+{
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server, "mod_waklog: phase3 returning" );
+    return DECLINED;
+}
+static int waklog_phase4( request_rec *r )
+{
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server, "mod_waklog: phase4 returning" );
+    return DECLINED;
+}
+static int waklog_phase5( request_rec *r )
+{
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server, "mod_waklog: phase5 returning" );
+    return DECLINED;
+}
+static int waklog_phase6( request_rec *r )
+{
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server, "mod_waklog: phase6 returning" );
+    return DECLINED;
+}
+static void waklog_phase8( request_rec *r )
+{
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server, "mod_waklog: phase8 returning" );
+    return;
+}
+static int waklog_phase9( request_rec *r )
+{
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server, "mod_waklog: phase9 returning" );
+    return DECLINED;
+}
+#endif /* 0 */
+
 module MODULE_VAR_EXPORT waklog_module = {
     STANDARD_MODULE_STUFF, 
     waklog_init,           /* module initializer                  */
@@ -717,7 +771,7 @@ module MODULE_VAR_EXPORT waklog_module = {
     NULL,                  /* [#6] determine MIME type            */
     waklog_phase7,         /* [#7] pre-run fixups                 */
     NULL,                  /* [#9] log a transaction              */
-    NULL,                  /* [#2] header parser                  */
+    waklog_phase2,         /* [#2] header parser                  */
     waklog_child_init,     /* child_init                          */
     NULL,                  /* child_exit                          */
     waklog_phase0          /* [#0] post read-request              */
