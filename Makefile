@@ -6,10 +6,11 @@ CC=	gcc
 INC=	-I/afs/umich.edu/group/itd/software/packages/k/kerberos-5/current/i386_linux24/dest/usr/krb5/include \
 	-I/usr/local/openafs/include \
 	-I/usr/local/apache/include
+
 LIB=    -L/afs/umich.edu/group/itd/software/packages/k/kerberos-5/current/i386_linux24/dest/usr/krb5/lib \
 	-lkrb4 -lkrb5 -ldes425 -lk5crypto -lcom_err -lnsl -lkrb524 \
-	-L/usr/lib/afs -lsys \
-	-lrx -llwp -lauth
+	-L/usr/lib/afs -lsys -lrx -llwp -lauth
+
 CFLAGS=	${DEF} ${INC} -DEAPI -g
 OBJ=	mod_waklog.o lifetime.o version.o
 
