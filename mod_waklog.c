@@ -419,7 +419,7 @@ waklog_aklog( request_rec *r )
     ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
 	"mod_waklog: waklog_aklog called: k5path: %s, k4path: %s", k5path, k4path );
 
-    if ( !k5path || !k4path ) {   
+    if ( !k5path || !k4path || !*k5path || !*k4path ) {
 	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
 		"mod_waklog: waklog_aklog giving up" );
 	goto cleanup;
@@ -701,9 +701,21 @@ waklog_new_connection( conn_rec *c ) {
 }
 
 
-static int waklog_phase2( request_rec *r )
+/*
+**  Here's a quick explaination for phase0 and phase2:
+**  Apache does a stat() on the path between phase0 and
+**  phase2, and must by ACLed rl to succeed.  So, at
+**  phase0 we acquire credentials for umweb:servers from
+**  a keytab, and at phase2 we must ensure we remove them.
+**
+**  Failure to "unlog" would be a security risk.
+*/
+    static int
+waklog_phase2( request_rec *r )
 {
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server, "mod_waklog: phase2 called" );
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
+	    "mod_waklog: phase2 called" );
+
     if ( child.token.ticketLen ) {
 	memset( &child.token, 0, sizeof( struct ktc_token ) );
 
@@ -712,7 +724,10 @@ static int waklog_phase2( request_rec *r )
 	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
 	    "mod_waklog: ktc_ForgetAllTokens succeeded: pid: %d", getpid() );
     }
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server, "mod_waklog: phase2 returning" );
+
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
+	    "mod_waklog: phase2 returning" );
+
     return DECLINED;
 }
 
