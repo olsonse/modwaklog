@@ -23,8 +23,6 @@
 
 #define KEYTAB_PATH "/home/drh/keytab.umweb.drhtest"
 #define PRINCIPAL "umweb/drhtest"
-#define AFS "afs"
-#define IN_TKT_SERVICE "krbtgt/UMICH.EDU"
 
 #define K5PATH "FILE:/tmp/waklog.creds.k5"
 #define K4PATH "/tmp/waklog.creds.k4"
@@ -44,7 +42,7 @@ typedef struct {
     int		protect;
     char	*keytab;
     char	*keytab_principal;
-    char	*afs_instance;
+    char	*afs_cell;
 } waklog_host_config;
 
 typedef struct {
@@ -63,7 +61,7 @@ waklog_create_dir_config( pool *p, char *path )
     cfg->protect = 0;
     cfg->keytab = 0;
     cfg->keytab_principal = 0;
-    cfg->afs_instance = 0;
+    cfg->afs_cell = "umich.edu";
 
     return( cfg );
 }
@@ -79,7 +77,7 @@ waklog_create_server_config( pool *p, server_rec *s )
     cfg->protect = 0;
     cfg->keytab = 0;
     cfg->keytab_principal = 0;
-    cfg->afs_instance = 0;
+    cfg->afs_cell = "umich.edu";
 
     return( cfg );
 }
@@ -220,14 +218,7 @@ waklog_kinit( server_rec *s )
 	    &waklog_module );
 
     /* which keytab should we use? */
-    strcpy( ktbuf, cfg->keytab ? cfg->keytab : KEYTAB_PATH );
-
-    if ( strlen( ktbuf ) > MAX_KEYTAB_NAME_LEN ) {
-	ap_log_error( APLOG_MARK, APLOG_ERR, s,
-		"server configuration error" );
-
-	goto cleanup;
-    }
+    strncpy( ktbuf, cfg->keytab ? cfg->keytab : KEYTAB_PATH, sizeof( ktbuf ) - 1 );
 
     ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
 	    "mod_waklog: waklog_kinit using: %s", ktbuf );
@@ -241,7 +232,7 @@ waklog_kinit( server_rec *s )
 
     /* get the krbtgt */
     if (( kerror = krb5_get_init_creds_keytab( kcontext, &v5creds, 
-		kprinc, keytab, 0, IN_TKT_SERVICE, &kopts ))) {
+		kprinc, keytab, 0, NULL, &kopts ))) {
 
 	ap_log_error( APLOG_MARK, APLOG_ERR, s,
 		(char *)error_message( kerror ));
@@ -307,9 +298,10 @@ waklog_aklog( request_rec *r )
     krb5_creds			*v5credsp = NULL;
     CREDENTIALS			v4creds;
     krb5_ccache			kccache = NULL;
-    struct ktc_principal	server = { "afs", "", "umich.edu" };
+    struct ktc_principal	server = { "afs", "", "" };
     struct ktc_principal	client;
     struct ktc_token		token;
+    waklog_host_config		*cfg;
 
     k5path = ap_table_get( r->subprocess_env, "KRB5CCNAME" );
     k4path = ap_table_get( r->subprocess_env, "KRBTKFILE" );
@@ -335,10 +327,22 @@ waklog_aklog( request_rec *r )
 	goto cleanup;
     }
 
+    krb524_init_ets(kcontext);
+
     memset( (char *)&increds, 0, sizeof(increds));
 
+    cfg = (waklog_host_config *) ap_get_module_config(
+	    r->server->module_config, &waklog_module );
+
+    /* afs/<cell> or afs */
+    strncpy( buf, "afs", sizeof( buf ) - 1 );
+    if ( strcmp( cfg->afs_cell, "umich.edu" ) ) {
+	strncat( buf, "/" ,		sizeof( buf ) - strlen( buf ) - 1 );
+	strncat( buf, cfg->afs_cell,	sizeof( buf ) - strlen( buf ) - 1 );
+    }
+
     /* set server part */
-    if (( kerror = krb5_parse_name( kcontext, AFS, &increds.server ))) {
+    if (( kerror = krb5_parse_name( kcontext, buf, &increds.server ))) {
 	ap_log_error( APLOG_MARK, APLOG_ERR, r->server,
 		(char *)error_message( kerror ));
 
@@ -362,15 +366,15 @@ waklog_aklog( request_rec *r )
     /* get the V5 credentials */
     if (( kerror = krb5_get_credentials( kcontext, 0, kccache,
 		&increds, &v5credsp ) ) ) {
-	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
-	    "mod_waklog: krb5_get_credentials: %s", krb_err_txt[ kerror ] );
+	ap_log_error( APLOG_MARK, APLOG_ERR, r->server,
+	    "mod_waklog: krb5_get_credentials: %s", error_message( kerror ));
 	goto cleanup;
     }
 
     /* get the V4 credentials */
     if (( kerror = krb524_convert_creds_kdc( kcontext, v5credsp, &v4creds ) ) ) {
-	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
-	    "mod_waklog: krb524_convert_creds_kdc: %s", krb_err_txt[ kerror ] );
+	ap_log_error( APLOG_MARK, APLOG_ERR, r->server,
+	    "mod_waklog: krb524_convert_creds_kdc: %s", error_message( kerror ));
 	goto cleanup;
     }
 
@@ -401,16 +405,18 @@ waklog_aklog( request_rec *r )
 		"mod_waklog: %d", v4creds.ticket_st.length );
 
 	/* build the name */
-	strcpy( buf, v4creds.pname );
+	strncpy( buf, v4creds.pname, sizeof( buf ) - 1 );
 	if ( v4creds.pinst[ 0 ] ) {
-		strcat( buf, "." );
-		strcat( buf, v4creds.pinst );
+		strncat( buf, ".",		sizeof( buf ) - strlen( buf ) - 1 );
+		strncat( buf, v4creds.pinst,    sizeof( buf ) - strlen( buf ) - 1 );
 	}
 
 	/* assemble the client */
-	strncpy( client.name, buf, MAXKTCNAMELEN - 1 );
-	strcpy( client.instance, "" );
-	strncpy( client.cell, v4creds.realm, MAXKTCNAMELEN - 1 );
+	strncpy( client.name, buf,		sizeof( client.name ) - 1 );
+	strncpy( client.instance, "",		sizeof( client.instance) - 1 );
+	strncpy( client.cell, v4creds.realm,	sizeof( client.cell ) - 1 );
+
+	strncpy( server.cell, cfg->afs_cell ,	sizeof( server.cell ) - 1 );
 
 	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
 		"mod_waklog: server: name=%s, instance=%s, cell=%s",
