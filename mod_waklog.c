@@ -399,7 +399,7 @@ cleanup:
 waklog_aklog( request_rec *r )
 {
     int				rc;
-    char			buf[ 2048 ];
+    char			buf[ MAXKTCTICKETLEN ];
     const char          	*k4path = NULL;
     const char          	*k5path = NULL;
     krb5_error_code		kerror;
@@ -507,19 +507,22 @@ waklog_aklog( request_rec *r )
 		"mod_waklog: client: %s", buf );
 
 	/* build the name */
-	memmove( buf, v5credsp->client->data[0].data, v5credsp->client->data[0].length );
+	memmove( buf, v5credsp->client->data[0].data,
+		min( v5credsp->client->data[0].length, MAXKTCNAMELEN - 1 ) );
 	buf[ v5credsp->client->data[0].length ] = '\0';
 	if ( v5credsp->client->length > 1 ) {
 		strncat( buf, ".", sizeof( buf ) - strlen( buf ) - 1 );
 		buflen = strlen( buf );
-		memmove( buf + buflen, v5credsp->client->data[1].data, v5credsp->client->data[1].length );
+		memmove( buf + buflen, v5credsp->client->data[1].data,
+			min( v5credsp->client->data[1].length, MAXKTCNAMELEN - strlen( buf ) - 1 ) );
 		buf[ buflen + v5credsp->client->data[1].length ] = '\0';
 	}
 
 	/* assemble the client */
 	strncpy( client.name, buf,		sizeof( client.name ) - 1 );
 	strncpy( client.instance, "",		sizeof( client.instance) - 1 );
-	memmove( buf, v5credsp->client->realm.data, v5credsp->client->realm.length );
+	memmove( buf, v5credsp->client->realm.data, 
+		min( v5credsp->client->realm.length, MAXKTCNAMELEN - 1 ) );
  	buf[ v5credsp->client->realm.length ] = '\0';
  	strncpy( client.cell, buf,		sizeof( client.cell ) - 1 );
 
