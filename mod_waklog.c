@@ -48,17 +48,10 @@ typedef struct {
 } waklog_host_config;
 
 typedef struct {
-	krb5_timestamp	endtime;	/* time krbtgt expires */
-	int		getting_tgt;	/* TAS flag, protecting above */
-} waklog_mod_config;
-waklog_mod_config	*mod = NULL;
-
-int			shmid = -1;
-
-typedef struct {
 	struct ktc_token	token;
 } waklog_child_config;
 waklog_child_config	*child = NULL;
+
 
     static void *
 waklog_create_dir_config( pool *p, char *path )
@@ -89,67 +82,6 @@ waklog_create_server_config( pool *p, server_rec *s )
     cfg->afs_instance = 0;
 
     return( cfg );
-}
-
-
-    static void
-waklog_init( server_rec *s, pool *p )
-{
-    extern char 	*version;
-    static key_t	shmkey = IPC_PRIVATE;
-    struct shmid_ds	shmbuf;
-
-    ap_log_error( APLOG_MARK, APLOG_INFO|APLOG_NOERRNO, s,
-	    "mod_waklog: version %s initialized.", version );
-
-    if ( mod  == NULL ) {
-	if (( shmid = shmget( shmkey, sizeof( waklog_mod_config ),
-			IPC_CREAT | SHM_R | SHM_W )) == -1 ) {
-	    ap_log_error( APLOG_MARK, APLOG_ERR, s,
-			"mod_waklog: shmget failed" );
-	    exit ( -1 );
-	}
-
-	ap_log_error( APLOG_MARK, APLOG_INFO|APLOG_NOERRNO, s,
-	    "mod_waklog: waklog_init: created shared memory segment %d", shmid );
-
-	if (( mod = (waklog_mod_config *) shmat( shmid, 0, 0 ) ) ==
-		(waklog_mod_config *) -1 ) {
-	    ap_log_error( APLOG_MARK, APLOG_ERR, s,
-		"mod_waklog: shmat failed" );
-	    /* we'll exit after removing the segment */
-
-	} else {
-	    if ( shmctl( shmid, IPC_STAT, &shmbuf ) != 0 ) {
-		ap_log_error( APLOG_MARK, APLOG_ERR, s,
-		    "mod_waklog: shmctl failed to stat" );
-
-	    } else {
-		shmbuf.shm_perm.uid = ap_user_id;
-		shmbuf.shm_perm.gid = ap_group_id;
-
-		if ( shmctl( shmid, IPC_SET, &shmbuf ) != 0 ) {
-		    ap_log_error( APLOG_MARK, APLOG_ERR, s,
-			"mod_waklog: shmctl failed to set" );
-		}
-	    }
-		
-	}
-
-	if ( shmctl( shmid, IPC_RMID, NULL ) != 0 ) {
-	    ap_log_error( APLOG_MARK, APLOG_ERR, s,
-		"mod_waklog: shmctl failed to remove" );
-	}
-
-	if ( mod == (waklog_mod_config *) -1 ) {
-	    exit ( -1 );
-	}
-    }
-
-    mod->endtime = 0;
-    mod->getting_tgt = 0;
-
-    return;
 }
 
 
@@ -204,9 +136,6 @@ waklog_child_init( server_rec *s, pool *p )
 
     setpag();
 
-    ap_log_error( APLOG_MARK, APLOG_INFO|APLOG_NOERRNO, s,
-	    "mod_waklog: waklog_child_init: child: 0x%08x", child );
-
     return;
 }
 
@@ -243,7 +172,7 @@ pioctl_cleanup( void *data )
 
 
     static int
-waklog_ktinit( request_rec *r, char *keytab_path )
+waklog_ktinit( server_rec *s )
 {
     krb5_error_code		kerror;
     krb5_context		kcontext;
@@ -255,191 +184,153 @@ waklog_ktinit( request_rec *r, char *keytab_path )
     krb5_keytab			keytab = 0;
     char			ktbuf[ MAX_KEYTAB_NAME_LEN + 1 ];
     krb5_timestamp		now;
+    waklog_host_config		*cfg;
 
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
 	"mod_waklog: waklog_ktinit called" );
 
-    /* set our environment variables */
-    ap_table_set( r->subprocess_env, "KRB5CCNAME", K5PATH );
-    ap_table_set( r->subprocess_env, "KRBTKFILE", K4PATH );
+    if (( kerror = krb5_init_context( &kcontext ))) {
+	ap_log_error( APLOG_MARK, APLOG_ERR, s,
+        	(char *)error_message( kerror ));
 
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
-	"mod_waklog: KRB5CCNAME: %s, KRBTKFILE: %s", K5PATH, K4PATH );
-
-#define SOON 300
-
-    /* will we need another tgt soon? */
-    now = time( NULL );
-    if ( !mod->getting_tgt && mod->endtime < now + SOON ) {
-
-	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
-		"mod_waklog: mod->endtime: %u, now: %u", mod->endtime, now );
-
-	/*
-	** Only one process will get into the critical region below and
-	** replace the soon-to-be-expired credential; the rest will just
-	** use the still-good credential until the new one shows up.
-	**
-	** The TAS flag will stop other processes from entering the
-	** first half of the conditional above, and the critical region
-	** below will not exit until mod->endtime has been updated to
-	** reflect that of the new credentials (or fail).
-	**
-	** (While it is possible for all child processes to get past the
-	** first half of the conditional above, and then for one
-	** process to get into the critical region below and run to the
-	** end (clearing the TAS flag), a fair scheduler would not
-	** do this; but even so, it really wouldn't kill us if ALL of
-	** the child processes got credentials, anyway.
-	*/
-	if ( !test_and_set_bit( 0, &mod->getting_tgt ) ) {
-
-	    if (( kerror = krb5_init_context( &kcontext ))) {
-	        ap_log_error( APLOG_MARK, APLOG_ERR, r->server,
-	    	(char *)error_message( kerror ));
-
-	        goto cleanup1;
-	    }
-
-	    /* use the path */
-	    if (( kerror = krb5_cc_resolve( kcontext, K5PATH, &kccache )) != 0 ) {
-	        ap_log_error( APLOG_MARK, APLOG_ERR, r->server,
-		    (char *)error_message( kerror ));
-
-		goto cleanup2;
-	    }
-
-	    if (( kerror = krb5_parse_name( kcontext, PRINCIPAL, &kprinc ))) {
-	        ap_log_error( APLOG_MARK, APLOG_ERR, r->server,
-		    (char *)error_message( kerror ));
-
-	   	goto cleanup3;
-	    }
-
-	    krb5_get_init_creds_opt_init( &kopts );
-	    krb5_get_init_creds_opt_set_tkt_life( &kopts, 10*60*60 );
-	    krb5_get_init_creds_opt_set_renew_life( &kopts, 0 );
-	    krb5_get_init_creds_opt_set_forwardable( &kopts, 1 );
-	    krb5_get_init_creds_opt_set_proxiable( &kopts, 0 );
-
-	    /* which keytab should we use? */
-	    strcpy( ktbuf, keytab_path ? keytab_path : KEYTAB_PATH );
-
-	    if ( strlen( ktbuf ) > MAX_KEYTAB_NAME_LEN ) {
-	        ap_log_error( APLOG_MARK, APLOG_ERR, r->server,
-		    "server configuration error" );
-
-		goto cleanup4;
-	    }
-
-	    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
-		    "mod_waklog: waklog_ktinit using: %s", ktbuf );
-
-	    if (( kerror = krb5_kt_resolve( kcontext, ktbuf, &keytab )) != 0 ) {
-	        ap_log_error( APLOG_MARK, APLOG_ERR, r->server,
-		    (char *)error_message( kerror ));
-
-		goto cleanup4;
-	    }
-
-	    /* get the krbtgt */
-	    if (( kerror = krb5_get_init_creds_keytab( kcontext, &v5creds, 
-			kprinc, keytab, 0, IN_TKT_SERVICE, &kopts ))) {
-
-	        ap_log_error( APLOG_MARK, APLOG_ERR, r->server,
-		    (char *)error_message( kerror ));
-
-		goto cleanup5;
-	    }
-
-	    if (( kerror = krb5_verify_init_creds( kcontext, &v5creds,
-		    kprinc, keytab, NULL, NULL )) != 0 ) {
-
-		ap_log_error( APLOG_MARK, APLOG_ERR, r->server,
-		    (char *)error_message( kerror ));
-
-		goto cleanup6;
-	    }
-
-	    if (( kerror = krb5_cc_initialize( kcontext, kccache, kprinc )) != 0 ) {
-		ap_log_error( APLOG_MARK, APLOG_ERR, r->server,
-		    (char *)error_message( kerror ));
-
-		goto cleanup6;
-	    }
-
-	    if (( kerror = krb5_cc_store_cred( kcontext, kccache, &v5creds )) != 0 ) {
-		ap_log_error( APLOG_MARK, APLOG_ERR, r->server,
-		    (char *)error_message( kerror ));
-
-		goto cleanup6;
-	    }
-
-	    /* convert K5 => K4 */
-	    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
-		    "mod_waklog: before krb524_convert_creds" );
-
-	    if (( kerror = krb524_convert_creds_kdc( kcontext,
-			&v5creds, &v4creds )) != 0 ) {
-
-		ap_log_error( APLOG_MARK, APLOG_ERR, r->server,
-		    (char *)error_message( kerror ));
-
-		goto cleanup6;
-	    }
-
-	    /* use the path */
-	    krb_set_tkt_string( (char *)K4PATH );
-
-	    /* initialize ticket cache */
-	    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
-		    "mod_waklog: before in_tkt" );
-
-	    if (( kerror = in_tkt( v4creds.pname, v4creds.pinst )) != KSUCCESS ) {
-		ap_log_error( APLOG_MARK, APLOG_ERR, r->server,
-		    (char *)error_message( kerror ));
-
-		goto cleanup6;
-	    }
-
-	    /* stash, ticket, session key, etc for future use */
-	    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
-		    "mod_waklog: before krb_save_credentials" );
-
-	    if (( kerror = krb_save_credentials( v4creds.service,
-		    v4creds.instance,
-		    v4creds.realm,
-		    v4creds.session,
-		    v4creds.lifetime,
-		    v4creds.kvno,
-		    &(v4creds.ticket_st),
-		    v4creds.issue_date )) != 0 ) {
-
-		ap_log_error( APLOG_MARK, APLOG_ERR, r->server,
-			(char *)error_message( kerror ));
-
-		goto cleanup6;
-	    }
-
-	    /* save this */
-	    mod->endtime = v5creds.times.endtime;
-	    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
-		    "mod_waklog: mod->endtime: %u, mod->getting_tgt: %d",
-		    mod->endtime, mod->getting_tgt );
-
-cleanup6:   krb5_free_cred_contents( kcontext, &v5creds );
-cleanup5:   (void)krb5_kt_close( kcontext, keytab );
-cleanup4:   krb5_free_principal( kcontext, kprinc );
-cleanup3:   krb5_cc_close( kcontext, kccache );
-cleanup2:   krb5_free_context( kcontext );
-
-	    /* exit the critical region */
-cleanup1:   mod->getting_tgt = 0;
-	}
-
+        goto cleanup1;
     }
 
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
+    /* use the path */
+    if (( kerror = krb5_cc_resolve( kcontext, K5PATH, &kccache )) != 0 ) {
+	ap_log_error( APLOG_MARK, APLOG_ERR, s,
+		(char *)error_message( kerror ));
+
+    	goto cleanup2;
+    }
+
+   if (( kerror = krb5_parse_name( kcontext, PRINCIPAL, &kprinc ))) {
+	ap_log_error( APLOG_MARK, APLOG_ERR, s,
+		(char *)error_message( kerror ));
+
+       	goto cleanup3;
+    }
+
+    krb5_get_init_creds_opt_init( &kopts );
+    krb5_get_init_creds_opt_set_tkt_life( &kopts, 10*60*60 );
+    krb5_get_init_creds_opt_set_renew_life( &kopts, 0 );
+    krb5_get_init_creds_opt_set_forwardable( &kopts, 1 );
+    krb5_get_init_creds_opt_set_proxiable( &kopts, 0 );
+
+    cfg = (waklog_host_config *) ap_get_module_config( s->module_config,
+	    &waklog_module );
+
+    /* which keytab should we use? */
+    strcpy( ktbuf, cfg->keytab ? cfg->keytab : KEYTAB_PATH );
+
+    if ( strlen( ktbuf ) > MAX_KEYTAB_NAME_LEN ) {
+	ap_log_error( APLOG_MARK, APLOG_ERR, s,
+		"server configuration error" );
+
+	goto cleanup4;
+    }
+
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
+	    "mod_waklog: waklog_ktinit using: %s", ktbuf );
+
+    if (( kerror = krb5_kt_resolve( kcontext, ktbuf, &keytab )) != 0 ) {
+	ap_log_error( APLOG_MARK, APLOG_ERR, s,
+		(char *)error_message( kerror ));
+
+    	goto cleanup4;
+    }
+
+    /* get the krbtgt */
+    if (( kerror = krb5_get_init_creds_keytab( kcontext, &v5creds, 
+		kprinc, keytab, 0, IN_TKT_SERVICE, &kopts ))) {
+
+	ap_log_error( APLOG_MARK, APLOG_ERR, s,
+		(char *)error_message( kerror ));
+
+    	goto cleanup5;
+    }
+
+   if (( kerror = krb5_verify_init_creds( kcontext, &v5creds,
+    	    kprinc, keytab, NULL, NULL )) != 0 ) {
+
+	ap_log_error( APLOG_MARK, APLOG_ERR, s,
+		(char *)error_message( kerror ));
+
+    	goto cleanup6;
+    }
+
+    if (( kerror = krb5_cc_initialize( kcontext, kccache, kprinc )) != 0 ) {
+	ap_log_error( APLOG_MARK, APLOG_ERR, s,
+		(char *)error_message( kerror ));
+
+    	goto cleanup6;
+    }
+
+    if (( kerror = krb5_cc_store_cred( kcontext, kccache, &v5creds )) != 0 ) {
+	ap_log_error( APLOG_MARK, APLOG_ERR, s,
+		(char *)error_message( kerror ));
+
+    	goto cleanup6;
+    }
+
+#if 0
+    /* convert K5 => K4 */
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
+	    "mod_waklog: before krb524_convert_creds" );
+
+    if (( kerror = krb524_convert_creds_kdc( kcontext,
+	    &v5creds, &v4creds )) != 0 ) {
+
+    	ap_log_error( APLOG_MARK, APLOG_ERR, s,
+		(char *)error_message( kerror ));
+
+    	goto cleanup6;
+    }
+
+    /* use the path */
+    krb_set_tkt_string( (char *)K4PATH );
+
+    /* initialize ticket cache */
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
+	    "mod_waklog: before in_tkt" );
+
+    if (( kerror = in_tkt( v4creds.pname, v4creds.pinst )) != KSUCCESS ) {
+	ap_log_error( APLOG_MARK, APLOG_ERR, s,
+		(char *)error_message( kerror ));
+
+    	goto cleanup6;
+    }
+
+    /* stash, ticket, session key, etc for future use */
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
+	    "mod_waklog: before krb_save_credentials" );
+
+    if (( kerror = krb_save_credentials( v4creds.service,
+	    v4creds.instance, v4creds.realm, v4creds.session,
+	    v4creds.lifetime, v4creds.kvno, &(v4creds.ticket_st),
+	    v4creds.issue_date )) != 0 ) {
+
+    	ap_log_error( APLOG_MARK, APLOG_ERR, s,
+    		(char *)error_message( kerror ));
+
+    	goto cleanup6;
+    }
+#endif /* 0 */
+
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
+	"mod_waklog: waklog_ktinit success" );
+
+cleanup6: if ( v5creds.client == kprinc ) {
+	      v5creds.client = 0;
+	  }
+	  krb5_free_cred_contents( kcontext, &v5creds );
+cleanup5: (void)krb5_kt_close( kcontext, keytab );
+cleanup4: krb5_free_principal( kcontext, kprinc );
+cleanup3: krb5_cc_close( kcontext, kccache );
+cleanup2: krb5_free_context( kcontext );
+cleanup1:   
+
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
 	"mod_waklog: waklog_ktinit: exiting" );
 
     return( 0 );
@@ -600,6 +491,45 @@ waklog_aklog( request_rec *r )
 
 }
 
+    static int
+waklog_child_routine( void *s, child_info *pinfo )
+{
+    ap_log_error( APLOG_MARK, APLOG_INFO|APLOG_NOERRNO, s,
+	    "mod_waklog: waklog_child_routine called" );
+
+    if ( !getuid() ) {
+	ap_log_error( APLOG_MARK, APLOG_INFO|APLOG_NOERRNO, s,
+		"mod_waklog: waklog_child_routine called as root" );
+
+	/* this was causing the credential file to get owned by root */
+	setgid(ap_group_id);
+	setuid(ap_user_id);
+    }
+
+    while( 1 ) {
+	waklog_ktinit( s );
+	sleep( 60 /* 10*60*60 - 5*60 */ );
+    }
+
+}
+
+
+    static void
+waklog_init( server_rec *s, pool *p )
+{
+    extern char	*version;
+    int pid;
+
+    ap_log_error( APLOG_MARK, APLOG_INFO|APLOG_NOERRNO, s,
+	    "mod_waklog: version %s initialized.", version );
+
+    pid = ap_bspawn_child( p, waklog_child_routine, s, kill_always,
+	    NULL, NULL, NULL );
+
+    ap_log_error( APLOG_MARK, APLOG_INFO|APLOG_NOERRNO, s,
+	    "mod_waklog: ap_bspawn_child: %d.", pid );
+}
+
 
     static int
 waklog_phase0( request_rec *r )
@@ -628,8 +558,9 @@ waklog_phase0( request_rec *r )
     /* do this only if we are still unauthenticated */
     if ( !child->token.ticketLen ) {
 
-	/* authenticate using keytab file */
-	waklog_ktinit( r , cfg->keytab );
+	/* set our environment variables */
+	ap_table_set( r->subprocess_env, "KRB5CCNAME", K5PATH );
+	ap_table_set( r->subprocess_env, "KRBTKFILE", K4PATH );
 
 	/* stuff the credentials into the kernel */
 	waklog_aklog( r );
