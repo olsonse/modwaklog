@@ -1,0 +1,40 @@
+INTRO
+
+mod_waklog is an Apache module that provides aklog-like semantics
+for the web.  mod_waklog will acquire (and store in the kernel) an
+AFS credential when a connection is opened, use the credential for
+the duration of the connection, and will remove the credential when
+the connection is closed.
+
+mod_waklog allows you to permit directories using AFS ACLs, and access
+them via a web browser.  An ACL of "umweb:servers rl" is required for
+each mod_waklog-protected directory.
+
+mod_waklog allows scripts to run as you.  Programs which use AFS
+credentials to authenticate themselves do so as you.
+
+mod_waklog often is used with mod_cosign, and uses the cosign-provided
+krbtgt to acquire an AFS credential; this extends single signon to AFS
+via the web.
+
+PHASES
+
+Apache processes a request in multiple phases.
+
+mod_waklog runs at phase 0 to acquire credentials via a keytab, and
+runs at phase 2 to remove the credentials.
+
+mod_waklog runs at phase 7 to acquire credentials of whatever krbtgt
+is referenced via KRB5CCNAME (e.g., set by mod_cosign).
+
+mod_waklog runs at connection termination to remove the credentials
+it acquired at phase 0 or phase 7.
+
+Apache calls stat() between phase 1 and phase 2 to determine if it
+has access to the directory; if it doesn't have read access at that
+point, it won't try to read it again, even if later phases would
+acquire credentials which would allow it to do so.  mod_waklog
+acquires an afs credential for a principal in the pts group
+umweb:servers at phase 0, and removes this credential at phase 2;
+directories permitted "umweb:servers rl" will allow the stat() call
+to succeed.
