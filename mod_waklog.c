@@ -12,14 +12,18 @@
 #include <sys/ioccom.h>
 #endif /* sun */
 #include <stropts.h>
+#if 0
 #include <kerberosIV/krb.h>
 #include <kerberosIV/des.h>
+#endif /* 0 */
 #include <afs/venus.h>
 #include <afs/auth.h>
 #include <rx/rxkad.h>
 
+#if 0
 #include <asm/bitops.h>
 #include <sys/shm.h>
+#endif /* 0 */
 
 #define KEYTAB			"/home/drh/keytab.umweb.drhtest"
 #define KEYTAB_PRINCIPAL	"umweb/drhtest"
@@ -54,57 +58,6 @@ typedef struct {
 	struct ktc_token	token;
 } waklog_child_config;
 waklog_child_config	child;
-
-void
-bin_dump( char *s, char *cp, int count )
-{
-    char *buffer;
-    char c;
-    int w;
-    int i;
-    long o;
-
-    o = 0;
-    buffer = cp;
-    while ( count > 0 ) {
-        c = 16;
-        if (c > count) {
-	    c = count;
-	}
-        sprintf( s, "%05lx:", o);
-	s += strlen(s);
-        w = 0;
-        for (i = 0; i < c/2; ++i) {
-            w += 5;
-            sprintf( s, " %04x", ((unsigned short *)buffer)[i]);
-	    s += strlen(s);
-	}
-        if (c & 1) {
-            w += 3;
-            sprintf( s, " %02x", buffer[c-1]);
-	    s += strlen(s);
-	}
-        while (w < 41) {
-            ++w;
-            sprintf( s, "%c", ' ');
-	    s += strlen(s);
-	}
-        for (i = 0; i < c; ++i) {
-            if (isprint(buffer[i])) {
-                    sprintf( s, "%c", buffer[i]);
-            } else {
-                    sprintf( s, ".");
-	    }
-	    s += strlen(s);
-	}
-        sprintf( s, "\n" );
-	s += strlen(s);
-        o += c;
-        buffer += c;
-        count -= c;
-    }
-    sprintf( s, "%05lx:\0", o );
-}
 
 
     static void *
@@ -487,12 +440,6 @@ waklog_aklog( request_rec *r )
     token.ticketLen = v5credsp->ticket.length;
     memmove( token.ticket, v5credsp->ticket.data, token.ticketLen );
 
-    /*
-    ** bin_dump( buf, (char *) &token, token.ticketLen + 24 );
-    ** ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
-    ** 	"mod_waklog: token\n%s", buf );
-    */
-
     /* make sure we have to do this */
     if ( child.token.kvno != token.kvno ||
 	    child.token.ticketLen != token.ticketLen ||
@@ -500,17 +447,14 @@ waklog_aklog( request_rec *r )
 		    sizeof( token.sessionKey ) )) ||
 	    (memcmp( child.token.ticket, token.ticket, token.ticketLen )) ) {
 
-	/*
-	** bin_dump( buf, (char *) &child.token, child.token.ticketLen + 24 );
-	** ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
-	**	"mod_waklog: child.token\n%s", buf );
-	*/
+	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
+		"mod_waklog: client: %s", buf );
 
 	/* build the name */
 	memmove( buf, v5credsp->client->data[0].data, v5credsp->client->data[0].length );
 	buf[ v5credsp->client->data[0].length ] = '\0';
 	if ( v5credsp->client->length > 1 ) {
-		strncat( buf, ".",		sizeof( buf ) - strlen( buf ) - 1 );
+		strncat( buf, ".", sizeof( buf ) - strlen( buf ) - 1 );
 		buflen = strlen( buf );
 		memmove( buf + buflen, v5credsp->client->data[1].data, v5credsp->client->data[1].length );
 		buf[ buflen + v5credsp->client->data[1].length ] = '\0';
