@@ -6,10 +6,10 @@ CC=	gcc
 INC=	-I/usr/local/krb5/include -I/usr/local/openafs/include \
 	-I/usr/local/apache/include
 LIB=    -L/usr/local/krb5/lib \
-	-lkrb4 -lkrb5 -ldes425 -lk5crypto -lcom_err -lsocket -lnsl \
-	-L/usr/local/openafs/lib/afs -lsys \
-	-L/usr/local/openafs/lib -lrx -llwp
-CFLAGS=	${DEF} ${INC} -DEAPI
+	-lkrb4 -lkrb5 -ldes425 -lk5crypto -lcom_err -lnsl -lkrb524 \
+	-L/usr/lib/afs -lsys \
+	-lrx -llwp -lauth
+CFLAGS=	${DEF} ${INC} -DEAPI -g
 OBJ=	mod_waklog.o lifetime.o version.o
 
 all:	${ALL}
