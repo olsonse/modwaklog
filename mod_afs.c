@@ -32,6 +32,16 @@ afs_init( server_rec *s, pool *p )
 
 
     static void
+afs_child_init( server_rec *s, pool *p )
+{
+    setpag();
+    ap_log_error( APLOG_MARK, APLOG_INFO|APLOG_NOERRNO, s,
+	    "mod_afs: setpag called in child init" );
+    return;
+}
+
+
+    static void
 pioctl_cleanup( void *data )
 {
     request_rec		*r = (request_rec *)data;
@@ -44,11 +54,12 @@ pioctl_cleanup( void *data )
 
     if ( pioctl( 0, VIOCUNPAG, &vi, 0 ) < 0 ) {
 	ap_log_error( APLOG_MARK, APLOG_ERR, r->server,
-		"unlog pioctl failed\n" );
+		"mod_afs: unlog pioctl failed" );
     }
 
     ap_log_error( APLOG_MARK, APLOG_ERR, r->server,
-	    "unlog pioctl succeeded\n" );
+	    "mod_afs: unlog pioctl succeeded" );
+    return;
 }
 
 
@@ -63,11 +74,15 @@ get_afs_tokens( request_rec *r )
     char		*urealm = "UMICH.EDU";
     char		*lrealm = "umich.edu";
 
-    setpag();
+    /*
+    /* setpag();
+    /* ap_log_error( APLOG_MARK, APLOG_INFO|APLOG_NOERRNO, s,
+    /*	    "mod_afs: setpag called in get_afs_tokens" );
+    */
 
     if (( rc = get_ad_tkt( "afs", "", urealm, 255 )) != KSUCCESS ) {
 	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_INFO, r->server,
-		"get_ad_tkt: %s\n", krb_err_txt[ rc ] );
+		"mod_afs: get_ad_tkt: %s", krb_err_txt[ rc ] );
 
 	/* user doesn't have tickets: use server's srvtab */
 
@@ -76,18 +91,18 @@ get_afs_tokens( request_rec *r )
 
     if (( rc = krb_get_cred( "afs", "", urealm, &cr )) != KSUCCESS ) {
 	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
-		"krb_get_cred: %s\n", krb_err_txt[ rc ] );
+		"mod_afs: krb_get_cred: %s", krb_err_txt[ rc ] );
 	return OK;
     }
 
     ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server,
-	    "%s.%s@%s\n", cr.service, cr.instance, cr.realm );
+	    "mod_afs: %s.%s@%s", cr.service, cr.instance, cr.realm );
     ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server,
-	    "%d %d %d\n", cr.lifetime, cr.kvno, cr.issue_date );
+	    "mod_afs: %d %d %d", cr.lifetime, cr.kvno, cr.issue_date );
     ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server,
-	    "%s %s\n", cr.pname, cr.pinst );
+	    "mod_afs: %s %s", cr.pname, cr.pinst );
     ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server,
-	    "%d\n", cr.ticket_st.length );
+	    "mod_afs: %d", cr.ticket_st.length );
 
     s = buf;
     memmove( s, &cr.ticket_st.length, sizeof( int ));
@@ -121,13 +136,14 @@ get_afs_tokens( request_rec *r )
 
     if ( pioctl( 0, VIOCSETTOK, &vi, 0 ) < 0 ) {
 	ap_log_error( APLOG_MARK, APLOG_ERR, r->server,
-		"pioctl failed\n" );
+		"mod_afs: pioctl failed" );
     }
 
     /* we'll need to unlog when this connection is done. */
     ap_register_cleanup( r->pool, (void *)r, pioctl_cleanup, ap_null_cleanup );
 
-ap_log_error( APLOG_MARK, APLOG_ERR, r->server, "done with token stuff\n" );
+ap_log_error( APLOG_MARK, APLOG_ERR, r->server,
+	"mod_afs: done with token stuff" );
 
     return OK;
 }
@@ -150,7 +166,7 @@ module MODULE_VAR_EXPORT afs_module = {
     NULL,                  /* [#7] pre-run fixups                 */
     NULL,                  /* [#9] log a transaction              */
     get_afs_tokens,        /* [#2] header parser                  */
-    NULL,                  /* child_init                          */
+    afs_child_init,        /* child_init                          */
     NULL,                  /* child_exit                          */
     NULL                   /* [#0] post read-request              */
 #ifdef EAPI
