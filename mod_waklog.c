@@ -16,11 +16,11 @@
 #include <afs/auth.h>
 #include <rx/rxkad.h>
 
-#define KEYTAB			"/home/drh/keytab.umweb.drhtest"
-#define KEYTAB_PRINCIPAL	"umweb/drhtest"
+#define KEYTAB			"/home/drh/keytab.itdwww"
+#define KEYTAB_PRINCIPAL	"itdwww"
 
 #define TKT_LIFE	10*60*60
-#define	SLEEP_TIME	5*60 /* should be TKT_LIFE */
+#define	SLEEP_TIME	TKT_LIFE - 5*60
 
 #define AFS_CELL	"umich.edu" /* NB: lower case */
 
@@ -28,14 +28,6 @@
 #define K4PATH		"/tmp/waklog.creds.k4"
 
 module waklog_module;
-
-struct ClearToken {
-    long AuthHandle;
-    char HandShakeKey[ 8 ];
-    long ViceId;
-    long BeginTimestamp;
-    long EndTimestamp;
-};
 
 typedef struct {
     int		configured;
@@ -50,7 +42,7 @@ typedef struct {
 } waklog_child_config;
 waklog_child_config	child;
 
-
+#if 0
     static void *
 waklog_create_dir_config( pool *p, char *path )
 {
@@ -65,6 +57,7 @@ waklog_create_dir_config( pool *p, char *path )
 
     return( cfg );
 }
+#endif /* 0 */
 
 
     static void *
@@ -92,12 +85,16 @@ set_waklog_protect( cmd_parms *params, void *mconfig, int flag )
 {
     waklog_host_config          *cfg;
 
+#if 0
     if ( params->path == NULL ) {
+#endif /* 0 */
         cfg = (waklog_host_config *) ap_get_module_config(
                 params->server->module_config, &waklog_module );
+#if 0
     } else {
         cfg = (waklog_host_config *)mconfig;
     }
+#endif /* 0 */
 
     cfg->protect = flag;
     cfg->configured = 1;
@@ -110,17 +107,21 @@ set_waklog_use_keytab( cmd_parms *params, void *mconfig, char *file  )
 {
     waklog_host_config          *cfg;
 
+#if 0
     if ( params->path == NULL ) {
+#endif /* 0 */
         cfg = (waklog_host_config *) ap_get_module_config(
                 params->server->module_config, &waklog_module );
+#if 0
     } else {
         cfg = (waklog_host_config *)mconfig;
     }
+#endif /* 0 */
 
     ap_log_error( APLOG_MARK, APLOG_INFO|APLOG_NOERRNO, params->server,
-	    "mod_waklog: using keytab: %s", file );
+	    "mod_waklog: will use keytab: %s", file );
 
-    cfg->keytab = file;
+    cfg->keytab = ap_pstrdup ( params->pool, file );
     cfg->configured = 1;
     return( NULL );
 }
@@ -131,17 +132,21 @@ set_waklog_use_keytab_principal( cmd_parms *params, void *mconfig, char *file  )
 {
     waklog_host_config          *cfg;
 
+#if 0
     if ( params->path == NULL ) {
+#endif /* 0 */
         cfg = (waklog_host_config *) ap_get_module_config(
                 params->server->module_config, &waklog_module );
+#if 0
     } else {
         cfg = (waklog_host_config *)mconfig;
     }
+#endif /* 0 */
 
     ap_log_error( APLOG_MARK, APLOG_INFO|APLOG_NOERRNO, params->server,
-	    "mod_waklog: using keytab_principal: %s", file );
+	    "mod_waklog: will use keytab_principal: %s", file );
 
-    cfg->keytab_principal = file;
+    cfg->keytab_principal = ap_pstrdup ( params->pool, file );
     cfg->configured = 1;
     return( NULL );
 }
@@ -152,17 +157,21 @@ set_waklog_use_afs_cell( cmd_parms *params, void *mconfig, char *file  )
 {
     waklog_host_config          *cfg;
 
+#if 0
     if ( params->path == NULL ) {
+#endif /* 0 */
         cfg = (waklog_host_config *) ap_get_module_config(
                 params->server->module_config, &waklog_module );
+#if 0
     } else {
         cfg = (waklog_host_config *)mconfig;
     }
+#endif /* 0 */
 
     ap_log_error( APLOG_MARK, APLOG_INFO|APLOG_NOERRNO, params->server,
-	    "mod_waklog: using afs_cell: %s", file );
+	    "mod_waklog: will use afs_cell: %s", file );
 
-    cfg->afs_cell = file;
+    cfg->afs_cell = ap_pstrdup( params->pool, file );
     cfg->configured = 1;
     return( NULL );
 }
@@ -187,15 +196,15 @@ command_rec waklog_cmds[ ] =
     "enable waklog on a location or directory basis" },
 
     { "WaklogUseKeytabPath", set_waklog_use_keytab,
-    NULL, RSRC_CONF, TAKE1,
+    NULL, RSRC_CONF | ACCESS_CONF, TAKE1,
     "Use the supplied keytab rather than the default" },
 
     { "WaklogUseKeytabPrincipal", set_waklog_use_keytab_principal,
-    NULL, RSRC_CONF, TAKE1,
+    NULL, RSRC_CONF | ACCESS_CONF, TAKE1,
     "Use the supplied keytab principal rather than the default" },
 
     { "WaklogUseAFSCell", set_waklog_use_afs_cell,
-    NULL, RSRC_CONF, TAKE1,
+    NULL, RSRC_CONF | ACCESS_CONF, TAKE1,
     "Use the supplied AFS cell rather than the default" },
 
     { NULL }
@@ -231,9 +240,10 @@ waklog_kinit( server_rec *s )
     krb5_keytab			keytab = NULL;
     char			ktbuf[ MAX_KEYTAB_NAME_LEN + 1 ];
     waklog_host_config		*cfg;
+    int				i;
 
     ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
-	"mod_waklog: waklog_kinit called" );
+	"mod_waklog: waklog_kinit called: pid: %d", getpid() );
 
     cfg = (waklog_host_config *) ap_get_module_config( s->module_config,
 	    &waklog_module );
@@ -253,12 +263,27 @@ waklog_kinit( server_rec *s )
     	goto cleanup;
     }
 
-   if (( kerror = krb5_parse_name( kcontext, cfg->keytab_principal, &kprinc ))) {
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
+	"mod_waklog: keytab_principal: %s", cfg->keytab_principal );
+
+    if (( kerror = krb5_parse_name( kcontext, cfg->keytab_principal, &kprinc ))) {
 	ap_log_error( APLOG_MARK, APLOG_ERR, s,
 		(char *)error_message( kerror ));
 
        	goto cleanup;
     }
+
+#if 0
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
+	"mod_waklog: kprinc->realm: %.*s", kprinc->realm.length, kprinc->realm.data );
+
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
+	"mod_waklog: kprinc->length: %d", kprinc->length );
+    for ( i = 0; i < kprinc->length; i++ ) {
+	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
+		"mod_waklog: kprinc->data[%d].data: %.*s", i, kprinc->data[i].length, kprinc->data[i].data );
+    }
+#endif /* 0 */
 
     krb5_get_init_creds_opt_init( &kopts );
     krb5_get_init_creds_opt_set_tkt_life( &kopts, TKT_LIFE );
@@ -279,6 +304,8 @@ waklog_kinit( server_rec *s )
     	goto cleanup;
     }
 
+    memset( (char *)&v5creds, 0, sizeof(v5creds));
+
     /* get the krbtgt */
     if (( kerror = krb5_get_init_creds_keytab( kcontext, &v5creds, 
 		kprinc, keytab, 0, NULL, &kopts ))) {
@@ -289,14 +316,48 @@ waklog_kinit( server_rec *s )
     	goto cleanup;
     }
 
-   if (( kerror = krb5_verify_init_creds( kcontext, &v5creds,
-    	    kprinc, keytab, NULL, NULL )) != 0 ) {
+#if 0
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
+	"mod_waklog: v5creds.client->realm: %.*s", v5creds.client->realm.length, v5creds.client->realm.data );
+
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
+	    "mod_waklog: v5creds.client->length: %d", v5creds.client->length );
+    for ( i = 0; i < v5creds.client->length; i++ ) {
+	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
+		"mod_waklog: v5creds.client->data[%d].data: %.*s",
+		i, v5creds.client->data[i].length, v5creds.client->data[i].data );
+    }
+
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
+	"mod_waklog: v5creds.server->realm: %.*s", v5creds.server->realm.length, v5creds.server->realm.data );
+
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
+	"mod_waklog: v5creds.server->length: %d", v5creds.server->length );
+    for ( i = 0; i < v5creds.server->length; i++ ) {
+	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
+		"mod_waklog: v5creds.server->data[%d].data: %.*s",
+		i, v5creds.server->data[i].length, v5creds.server->data[i].data );
+    }
+
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
+	"mod_waklog: waklog_kinit #4" );
+
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, s,
+	    "mod_waklog: waklog_kinit kprinc==v5creds.server: %s", 
+	    krb5_principal_compare( kcontext, kprinc, v5creds.server ) ? "true" : "false" );
+#endif /* 0 */
+
+#if 0
+#error the proof of the pudding is in the eating
+    if (( kerror = krb5_verify_init_creds( kcontext, &v5creds,
+    	    v5creds.server, keytab, NULL, &vopts )) != 0 ) {
 
 	ap_log_error( APLOG_MARK, APLOG_ERR, s,
 		(char *)error_message( kerror ));
 
     	goto cleanup;
     }
+#endif /* 0 */
 
     if (( kerror = krb5_cc_initialize( kcontext, kccache, kprinc )) != 0 ) {
 	ap_log_error( APLOG_MARK, APLOG_ERR, s,
@@ -556,15 +617,20 @@ waklog_phase0( request_rec *r )
     ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
 	"mod_waklog: phase0 called" );
 
+#if 0
     /* directory config? */
     cfg = (waklog_host_config *)ap_get_module_config(
             r->per_dir_config, &waklog_module);
 
+
     /* server config? */
     if ( !cfg->configured ) {
+#endif /* 0 */
 	cfg = (waklog_host_config *)ap_get_module_config(
 	    r->server->module_config, &waklog_module);
+#if 0
     }
+#endif /* 0 */
 
     if ( !cfg->protect ) {
 	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
@@ -572,12 +638,12 @@ waklog_phase0( request_rec *r )
         return( DECLINED );
     }
 
+    /* set our environment variables */
+    ap_table_set( r->subprocess_env, "KRB5CCNAME", K5PATH );
+    ap_table_set( r->subprocess_env, "KRBTKFILE", K4PATH );
+
     /* do this only if we are still unauthenticated */
     if ( !child.token.ticketLen ) {
-
-	/* set our environment variables */
-	ap_table_set( r->subprocess_env, "KRB5CCNAME", K5PATH );
-	ap_table_set( r->subprocess_env, "KRBTKFILE", K4PATH );
 
 	/* stuff the credentials into the kernel */
 	waklog_aklog( r );
@@ -597,15 +663,19 @@ waklog_phase7( request_rec *r )
     ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
 	"mod_waklog: phase7 called" );
 
+#if 0
     /* directory config? */
     cfg = (waklog_host_config *)ap_get_module_config(
             r->per_dir_config, &waklog_module);
 
     /* server config? */
     if ( !cfg->configured ) {
+#endif /* 0 */
 	cfg = (waklog_host_config *)ap_get_module_config(
 	    r->server->module_config, &waklog_module);
+#if 0
     }
+#endif /* 0 */
 
     if ( !cfg->protect ) {
         return( DECLINED );
@@ -630,7 +700,11 @@ waklog_new_connection( conn_rec *c ) {
 module MODULE_VAR_EXPORT waklog_module = {
     STANDARD_MODULE_STUFF, 
     waklog_init,           /* module initializer                  */
+#if 0
     waklog_create_dir_config, /* create per-dir    config structures */
+#else /* 0 */
+    NULL,                  /* create per-dir    config structures */
+#endif /* 0 */
     NULL,                  /* merge  per-dir    config structures */
     waklog_create_server_config, /* create per-server config structures */
     NULL,                  /* merge  per-server config structures */
