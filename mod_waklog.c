@@ -11,7 +11,8 @@
 #include <kerberosIV/des.h>
 #include <afs/venus.h>
 
-#define KEYTAB_PATH "/usr/local/etc/kerbero/keytab.cosign"
+#define KEYTAB_PATH "/usr/local/users/clunis/keytab.umweb.mysql"
+#define PRINCIPAL "umweb/mysql"
 #define IN_TKT_SERVICE "krbtgt/UMICH.EDU"
 
 module waklog_module;
@@ -39,7 +40,6 @@ waklog_create_dir_config( pool *p, char *path )
     cfg = (waklog_host_config *)ap_pcalloc( p, sizeof( waklog_host_config ));
     cfg->configured = 0;
     cfg->protect = 0;
-    cfg->keytab = NULL;
 
     return( cfg );
 }
@@ -53,7 +53,6 @@ waklog_create_server_config( pool *p, server_rec *s )
     cfg = (waklog_host_config *)ap_pcalloc( p, sizeof( waklog_host_config ));
     cfg->configured = 0;
     cfg->protect = 0;
-    cfg->keytab = NULL;
 
     return( cfg );
 }
@@ -99,6 +98,9 @@ set_waklog_use_keytab( cmd_parms *params, void *mconfig, char *file  )
     } else {
         cfg = (waklog_host_config *)mconfig;
     }
+
+    ap_log_error( APLOG_MARK, APLOG_INFO|APLOG_NOERRNO, params->server,
+	    "mod_waklog: using keytab: %s", file );
 
     cfg->keytab = file;
     cfg->configured = 1;
@@ -172,8 +174,7 @@ waklog_ktinit( request_rec *r )
 	return;
     }
 
-    if (( kerror = krb5_parse_name( kcontext, r->connection->user,
-	    &kprinc ))) {
+    if (( kerror = krb5_parse_name( kcontext, "PRINCIPAL", &kprinc ))) {
 	ap_log_error( APLOG_MARK, APLOG_ERR, r->server,
 		(char *)error_message( kerror ));
 
@@ -259,6 +260,8 @@ waklog_ktinit( request_rec *r )
     krb5_free_principal( kcontext, kprinc );
     krb5_cc_close( kcontext, kccache );
     krb5_free_context( kcontext );
+
+    return( 0 );
 }
 
 
@@ -284,23 +287,21 @@ waklog_get_tokens( request_rec *r )
                 r->server->module_config, &waklog_module);
     }
 
-    if ( !cfg->protect ) {
-        return( DECLINED );
-    }
-
-    if ( cfg->keytab ) {
+    if ( cfg->keytab != NULL ) {
 	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
 		"mod_waklog: keytab is configured: %s", cfg->keytab );
 
-	/* check for afs token? */
-
 	/* authenticate using keytab file */
-
-	/* 524 */
-
-	/* get afs token */
+	waklog_ktinit( r );
 
 	return OK;
+    } else {
+	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, r->server,
+		"mod_waklog: keytab is not configured"  );
+    }
+
+    if ( !cfg->protect ) {
+        return( DECLINED );
     }
 
     if (( rc = krb_get_cred( "afs", "", urealm, &cr )) != KSUCCESS ) {
