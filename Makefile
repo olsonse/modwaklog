@@ -8,8 +8,8 @@ INC=	-I/afs/umich.edu/group/itd/software/packages/k/kerberos-5/current/i386_linu
 	-I/usr/local/apache/include
 
 LIB=    -L/afs/umich.edu/group/itd/software/packages/k/kerberos-5/current/i386_linux24/dest/usr/krb5/lib \
-	-lkrb4 -lkrb5 -ldes425 -lk5crypto -lcom_err -lnsl -lkrb524 \
-	-L/usr/lib/afs -lsys -lrx -llwp -lauth
+	-lkrb4 -lkrb5 -lk5crypto -lcom_err \
+	-L/usr/lib/afs -lsys -lrx -llwp -lauth -lresolv
 
 CFLAGS=	${DEF} ${INC} -DEAPI -g
 OBJ=	mod_waklog.o lifetime.o version.o
