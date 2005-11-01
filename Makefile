@@ -3,11 +3,11 @@ ALL=	mod_waklog.so
 APXS=	apxs
 CC=	gcc
 
-INC=	-I/afs/umich.edu/group/itd/software/packages/k/kerberos-5/current/i386_linux24/dest/usr/krb5/include \
+INC=	-I/path/to/krb5/include \
 	-I/usr/local/openafs/include \
 	-I/usr/local/apache/include
 
-LIB=    -L/afs/umich.edu/group/itd/software/packages/k/kerberos-5/current/i386_linux24/dest/usr/krb5/lib \
+LIB=    -L/path/to/usr/krb5/lib \
 	-lkrb4 -lkrb5 -lk5crypto -lcom_err \
 	-L/usr/lib/afs -lsys -lrx -llwp -lauth -lresolv
 

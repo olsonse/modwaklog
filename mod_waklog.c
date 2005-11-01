@@ -16,8 +16,8 @@
 #include <afs/auth.h>
 #include <rx/rxkad.h>
 
-#define KEYTAB			"/home/drh/keytab.itdwww"
-#define KEYTAB_PRINCIPAL	"itdwww"
+#define KEYTAB			"/path/to/keytab.www"
+#define KEYTAB_PRINCIPAL	"principalwww"
 
 #define TKT_LIFE	10*60*60
 #define	SLEEP_TIME	TKT_LIFE - 5*60
