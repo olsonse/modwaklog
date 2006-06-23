@@ -3,13 +3,13 @@ ALL=	mod_waklog.so
 APXS=	apxs
 CC=	gcc
 
-INC=	-I/path/to/krb5/include \
+INC=	-I/usr/local/mit-k5/include \
 	-I/usr/local/openafs/include \
 	-I/usr/local/apache/include
 
-LIB=    -L/path/to/usr/krb5/lib \
-	-lkrb4 -lkrb5 -lk5crypto -lcom_err \
-	-L/usr/lib/afs -lsys -lrx -llwp -lauth -lresolv
+LIB=    -L/usr/local/mit-k5/lib \
+	-lkrb5 -lk5crypto -lcom_err \
+	-L/usr/lib/afs -lsys -lrx -llwp -lauth -lresolv -lafsrpc
 
 CFLAGS=	${DEF} ${INC} -DEAPI -g
 OBJ=	mod_waklog.o lifetime.o version.o

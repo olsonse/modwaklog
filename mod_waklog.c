@@ -16,16 +16,15 @@
 #include <afs/auth.h>
 #include <rx/rxkad.h>
 
-#define KEYTAB			"/path/to/keytab.www"
-#define KEYTAB_PRINCIPAL	"principalwww"
+#define KEYTAB                  "/etc/keytab.default"
+#define KEYTAB_PRINCIPAL        "defaultprinc"
+#define AFS_CELL	"someplace.edu" /* NB: lower case */
 
 #define TKT_LIFE	10*60*60
 #define	SLEEP_TIME	TKT_LIFE - 5*60
 
-#define AFS_CELL	"umich.edu" /* NB: lower case */
 
 #define K5PATH		"FILE:/tmp/waklog.creds.k5"
-#define K4PATH		"/tmp/waklog.creds.k4"
 
 module waklog_module;
 
@@ -72,9 +71,8 @@ waklog_create_server_config( pool *p, server_rec *s )
     cfg->keytab_principal = KEYTAB_PRINCIPAL;
     cfg->afs_cell = AFS_CELL;
 
-#if 0
-    ap_set_module_config( s->module_config, &waklog_module, cfg);
-#endif /* 0 */
+	
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, s, "mod_waklog: server config created" );
 
     return( cfg );
 }
@@ -85,38 +83,23 @@ set_waklog_protect( cmd_parms *params, void *mconfig, int flag )
 {
     waklog_host_config          *cfg;
 
-#if 0
-    if ( params->path == NULL ) {
-#endif /* 0 */
-        cfg = (waklog_host_config *) ap_get_module_config(
-                params->server->module_config, &waklog_module );
-#if 0
-    } else {
-        cfg = (waklog_host_config *)mconfig;
-    }
-#endif /* 0 */
+    cfg = (waklog_host_config *) ap_get_module_config(
+            params->server->module_config, &waklog_module );
 
     cfg->protect = flag;
     cfg->configured = 1;
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_INFO, params->server, "mod_waklog: waklog_protect set" );
     return( NULL );
 }
 
 
     static const char *
-set_waklog_use_keytab( cmd_parms *params, void *mconfig, char *file  )
+set_waklog_keytab( cmd_parms *params, void *mconfig, char *file  )
 {
     waklog_host_config          *cfg;
 
-#if 0
-    if ( params->path == NULL ) {
-#endif /* 0 */
-        cfg = (waklog_host_config *) ap_get_module_config(
+    cfg = (waklog_host_config *) ap_get_module_config(
                 params->server->module_config, &waklog_module );
-#if 0
-    } else {
-        cfg = (waklog_host_config *)mconfig;
-    }
-#endif /* 0 */
 
     ap_log_error( APLOG_MARK, APLOG_INFO|APLOG_NOERRNO, params->server,
 	    "mod_waklog: will use keytab: %s", file );
@@ -132,16 +115,8 @@ set_waklog_use_keytab_principal( cmd_parms *params, void *mconfig, char *file  )
 {
     waklog_host_config          *cfg;
 
-#if 0
-    if ( params->path == NULL ) {
-#endif /* 0 */
-        cfg = (waklog_host_config *) ap_get_module_config(
+    cfg = (waklog_host_config *) ap_get_module_config(
                 params->server->module_config, &waklog_module );
-#if 0
-    } else {
-        cfg = (waklog_host_config *)mconfig;
-    }
-#endif /* 0 */
 
     ap_log_error( APLOG_MARK, APLOG_INFO|APLOG_NOERRNO, params->server,
 	    "mod_waklog: will use keytab_principal: %s", file );
@@ -157,16 +132,8 @@ set_waklog_use_afs_cell( cmd_parms *params, void *mconfig, char *file  )
 {
     waklog_host_config          *cfg;
 
-#if 0
-    if ( params->path == NULL ) {
-#endif /* 0 */
-        cfg = (waklog_host_config *) ap_get_module_config(
+    cfg = (waklog_host_config *) ap_get_module_config(
                 params->server->module_config, &waklog_module );
-#if 0
-    } else {
-        cfg = (waklog_host_config *)mconfig;
-    }
-#endif /* 0 */
 
     ap_log_error( APLOG_MARK, APLOG_INFO|APLOG_NOERRNO, params->server,
 	    "mod_waklog: will use afs_cell: %s", file );
@@ -195,7 +162,7 @@ command_rec waklog_cmds[ ] =
     NULL, RSRC_CONF | ACCESS_CONF, FLAG,
     "enable waklog on a location or directory basis" },
 
-    { "WaklogUseKeytabPath", set_waklog_use_keytab,
+    { "WaklogKeytab", set_waklog_keytab,
     NULL, RSRC_CONF | ACCESS_CONF, TAKE1,
     "Use the supplied keytab rather than the default" },
 
@@ -250,7 +217,7 @@ waklog_kinit( server_rec *s )
 
     if (( kerror = krb5_init_context( &kcontext ))) {
 	ap_log_error( APLOG_MARK, APLOG_ERR, s,
-        	(char *)error_message( kerror ));
+        	"mod_waklog: %s", (char *)error_message( kerror ));
 
         goto cleanup;
     }
@@ -258,7 +225,7 @@ waklog_kinit( server_rec *s )
     /* use the path */
     if (( kerror = krb5_cc_resolve( kcontext, K5PATH, &kccache )) != 0 ) {
 	ap_log_error( APLOG_MARK, APLOG_ERR, s,
-		(char *)error_message( kerror ));
+		"mod_waklog: %s", (char *)error_message( kerror ));
 
     	goto cleanup;
     }
@@ -268,22 +235,10 @@ waklog_kinit( server_rec *s )
 
     if (( kerror = krb5_parse_name( kcontext, cfg->keytab_principal, &kprinc ))) {
 	ap_log_error( APLOG_MARK, APLOG_ERR, s,
-		(char *)error_message( kerror ));
+		"mod_waklog: %s", (char *)error_message( kerror ));
 
        	goto cleanup;
     }
-
-#if 0
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, s,
-	"mod_waklog: kprinc->realm: %.*s", kprinc->realm.length, kprinc->realm.data );
-
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, s,
-	"mod_waklog: kprinc->length: %d", kprinc->length );
-    for ( i = 0; i < kprinc->length; i++ ) {
-	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, s,
-		"mod_waklog: kprinc->data[%d].data: %.*s", i, kprinc->data[i].length, kprinc->data[i].data );
-    }
-#endif /* 0 */
 
     krb5_get_init_creds_opt_init( &kopts );
     krb5_get_init_creds_opt_set_tkt_life( &kopts, TKT_LIFE );
@@ -299,7 +254,7 @@ waklog_kinit( server_rec *s )
 
     if (( kerror = krb5_kt_resolve( kcontext, ktbuf, &keytab )) != 0 ) {
 	ap_log_error( APLOG_MARK, APLOG_ERR, s,
-		(char *)error_message( kerror ));
+		"mod_waklog:krb5_kt_resolve %s", (char *)error_message( kerror ));
 
     	goto cleanup;
     }
@@ -311,57 +266,16 @@ waklog_kinit( server_rec *s )
 		kprinc, keytab, 0, NULL, &kopts ))) {
 
 	ap_log_error( APLOG_MARK, APLOG_ERR, s,
-		(char *)error_message( kerror ));
+		"mod_waklog:krb5_get_init_creds_keytab %s", (char *)error_message( kerror ));
 
     	goto cleanup;
     }
 
-#if 0
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, s,
-	"mod_waklog: v5creds.client->realm: %.*s", v5creds.client->realm.length, v5creds.client->realm.data );
 
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, s,
-	    "mod_waklog: v5creds.client->length: %d", v5creds.client->length );
-    for ( i = 0; i < v5creds.client->length; i++ ) {
-	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, s,
-		"mod_waklog: v5creds.client->data[%d].data: %.*s",
-		i, v5creds.client->data[i].length, v5creds.client->data[i].data );
-    }
-
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, s,
-	"mod_waklog: v5creds.server->realm: %.*s", v5creds.server->realm.length, v5creds.server->realm.data );
-
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, s,
-	"mod_waklog: v5creds.server->length: %d", v5creds.server->length );
-    for ( i = 0; i < v5creds.server->length; i++ ) {
-	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, s,
-		"mod_waklog: v5creds.server->data[%d].data: %.*s",
-		i, v5creds.server->data[i].length, v5creds.server->data[i].data );
-    }
-
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, s,
-	"mod_waklog: waklog_kinit #4" );
-
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, s,
-	    "mod_waklog: waklog_kinit kprinc==v5creds.server: %s", 
-	    krb5_principal_compare( kcontext, kprinc, v5creds.server ) ? "true" : "false" );
-#endif /* 0 */
-
-#if 0
-#error the proof of the pudding is in the eating
-    if (( kerror = krb5_verify_init_creds( kcontext, &v5creds,
-    	    v5creds.server, keytab, NULL, &vopts )) != 0 ) {
-
-	ap_log_error( APLOG_MARK, APLOG_ERR, s,
-		(char *)error_message( kerror ));
-
-    	goto cleanup;
-    }
-#endif /* 0 */
 
     if (( kerror = krb5_cc_initialize( kcontext, kccache, kprinc )) != 0 ) {
 	ap_log_error( APLOG_MARK, APLOG_ERR, s,
-		(char *)error_message( kerror ));
+		"mod_waklog:krb5_cc_initialize %s", (char *)error_message( kerror ));
 
     	goto cleanup;
     }
@@ -370,7 +284,7 @@ waklog_kinit( server_rec *s )
     krb5_free_cred_contents( kcontext, &v5creds );
     if ( kerror != 0 ) {
 	ap_log_error( APLOG_MARK, APLOG_ERR, s,
-		(char *)error_message( kerror ));
+		"mod_waklog: %s", (char *)error_message( kerror ));
 
     	goto cleanup;
     }
@@ -400,7 +314,6 @@ waklog_aklog( request_rec *r )
 {
     int				rc;
     char			buf[ MAXKTCTICKETLEN ];
-    const char          	*k4path = NULL;
     const char          	*k5path = NULL;
     krb5_error_code		kerror;
     krb5_context		kcontext = NULL;
@@ -414,12 +327,11 @@ waklog_aklog( request_rec *r )
     int				buflen;
 
     k5path = ap_table_get( r->subprocess_env, "KRB5CCNAME" );
-    k4path = ap_table_get( r->subprocess_env, "KRBTKFILE" );
 
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server,
-	"mod_waklog: waklog_aklog called: k5path: %s, k4path: %s", k5path, k4path );
+    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_INFO, r->server,
+	"mod_waklog: waklog_aklog called: k5path: %s", k5path );
 
-    if ( !k5path || !k4path || !*k5path || !*k4path ) {
+    if ( k5path == NULL ) {
 	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server,
 		"mod_waklog: waklog_aklog giving up" );
 	goto cleanup;
@@ -538,7 +450,6 @@ waklog_aklog( request_rec *r )
 		 client.name, client.instance, client.cell );
 
 	/* use the path */
-	krb_set_tkt_string( (char *)k4path );
 
 	/* rumor: we have to do this for AIX 4.1.4 with AFS 3.4+ */
 	write( 2, "", 0 );
@@ -620,20 +531,8 @@ waklog_phase0( request_rec *r )
     ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server,
 	"mod_waklog: phase0 called" );
 
-#if 0
-    /* directory config? */
-    cfg = (waklog_host_config *)ap_get_module_config(
-            r->per_dir_config, &waklog_module);
-
-
-    /* server config? */
-    if ( !cfg->configured ) {
-#endif /* 0 */
 	cfg = (waklog_host_config *)ap_get_module_config(
 	    r->server->module_config, &waklog_module);
-#if 0
-    }
-#endif /* 0 */
 
     if ( !cfg->protect ) {
 	ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server,
@@ -643,7 +542,6 @@ waklog_phase0( request_rec *r )
 
     /* set our environment variables */
     ap_table_set( r->subprocess_env, "KRB5CCNAME", K5PATH );
-    ap_table_set( r->subprocess_env, "KRBTKFILE", K4PATH );
 
     /* do this only if we are still unauthenticated */
     if ( !child.token.ticketLen ) {
@@ -666,19 +564,8 @@ waklog_phase7( request_rec *r )
     ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server,
 	"mod_waklog: phase7 called" );
 
-#if 0
-    /* directory config? */
-    cfg = (waklog_host_config *)ap_get_module_config(
-            r->per_dir_config, &waklog_module);
-
-    /* server config? */
-    if ( !cfg->configured ) {
-#endif /* 0 */
 	cfg = (waklog_host_config *)ap_get_module_config(
 	    r->server->module_config, &waklog_module);
-#if 0
-    }
-#endif /* 0 */
 
     if ( !cfg->protect ) {
         return( DECLINED );
@@ -713,6 +600,7 @@ waklog_new_connection( conn_rec *c ) {
     static int
 waklog_phase2( request_rec *r )
 {
+
     ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server,
 	    "mod_waklog: phase2 called" );
 
@@ -730,44 +618,6 @@ waklog_phase2( request_rec *r )
 
     return DECLINED;
 }
-
-#if 0
-static int waklog_phase1( request_rec *r )
-{
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server, "mod_waklog: phase1 returning" );
-    return DECLINED;
-}
-static int waklog_phase3( request_rec *r )
-{
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server, "mod_waklog: phase3 returning" );
-    return DECLINED;
-}
-static int waklog_phase4( request_rec *r )
-{
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server, "mod_waklog: phase4 returning" );
-    return DECLINED;
-}
-static int waklog_phase5( request_rec *r )
-{
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server, "mod_waklog: phase5 returning" );
-    return DECLINED;
-}
-static int waklog_phase6( request_rec *r )
-{
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server, "mod_waklog: phase6 returning" );
-    return DECLINED;
-}
-static void waklog_phase8( request_rec *r )
-{
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server, "mod_waklog: phase8 returning" );
-    return;
-}
-static int waklog_phase9( request_rec *r )
-{
-    ap_log_error( APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, r->server, "mod_waklog: phase9 returning" );
-    return DECLINED;
-}
-#endif /* 0 */
 
 module MODULE_VAR_EXPORT waklog_module = {
     STANDARD_MODULE_STUFF, 
@@ -800,3 +650,4 @@ module MODULE_VAR_EXPORT waklog_module = {
     waklog_new_connection  /* EAPI: new_connection                */
 #endif
 };
+
