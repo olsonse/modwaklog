@@ -18,7 +18,7 @@
 
 #define KEYTAB                  "/etc/keytab.default"
 #define KEYTAB_PRINCIPAL        "defaultprinc"
-#define AFS_CELL	"someplace.edu" /* NB: lower case */
+#define AFS_CELL      "someplace.edu" /* NB: lower case */
 
 #define TKT_LIFE	10*60*60
 #define	SLEEP_TIME	TKT_LIFE - 5*60

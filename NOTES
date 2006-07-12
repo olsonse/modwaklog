@@ -1,0 +1,28 @@
+
+Versions:
+
+0.6.0:
+Initial release.
+
+0.7.0:
+Removed K4 code.
+Removed extraneous #if 0's.
+Fixed bug where mod_waklog crashed if KRB5CCNAME was null.
+
+Future releases:
+0.8.0:
+Add configuration directives for Apache conf files.
+
+0.9.0:
+Integrate Apache 2 support.
+Configure support.
+Remove ticket renewal code?  Make it an option?
+
+1.0.0:
+Features working properly.
+
+Post 1.0.0:
+Things we haven't thought of yet.
+
+
+
