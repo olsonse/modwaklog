@@ -38,3 +38,30 @@ acquires an afs credential for a principal in the pts group
 umweb:servers at phase 0, and removes this credential at phase 2;
 directories permitted "umweb:servers rl" will allow the stat() call
 to succeed.
+
+BUILD 
+
+make
+
+Be sure the paths to apxs, include files, and libraries are correct.
+
+If you compiled Apache 2 with large file support, be sure to have:
+
+   #define _LARGEFILE64_SOURCE
+
+in mod_waklog.c.  If you run make and receive many errors about apr_off_t
+being undefined, you may need to add or comment out the above line.
+
+
+INSTALL
+
+Copy the mod_waklog.so to somewhere Apache can read and execute it.
+
+Add the following lines to your httpd.conf file:
+
+    LoadModule waklog_module        /path/to/mod_waklog.so
+
+    <IfModule mod_waklog.c>
+        WaklogProtected                 On
+    </IfModule>
+
