@@ -537,8 +537,10 @@ waklog_child_routine( void *s, child_info *pinfo )
 		 "mod_waklog: waklog_child_routine called as root" );
 
 	/* this was causing the credential file to get owned by root */
+#ifdef STANDARD20_MODULE_STUFF
 	setgid(ap_group_id);
 	setuid(ap_user_id);
+#endif
     }
 
     while( 1 ) {
