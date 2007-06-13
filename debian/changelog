@@ -1,0 +1,6 @@
+libapache-mod-waklog (0.0-umbc-20070316-1) unstable; urgency=low
+
+  * Initial release (Closes: #nnnn)  <nnnn is the bug number of your ITP>
+
+ -- Adam Megacz <megacz@cs.berkeley.edu>  Thu, 22 Mar 2007 21:05:30 -0700
+

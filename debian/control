@@ -1,0 +1,11 @@
+Source: libapache-mod-waklog
+Section: web
+Priority: optional
+Maintainer: Adam Megacz <megacz@cs.berkeley.edu>
+Build-Depends: apache-dev, libkrb5-dev, autoconf, automake
+Standards-Version: 3.6.1
+
+Package: libapache-mod-waklog
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, apache-common, krb5-config, libapache-mod-auth-kerb
+Description:  AFS Authentication for Apache

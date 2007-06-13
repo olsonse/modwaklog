@@ -1,0 +1,8 @@
+LoadModule: waklog_module /usr/lib/apache/1.3/mod_waklog.so
+Directives:
+ WaklogProtected
+ WaklogPrincipal
+ WaklogUseAFSCell
+ WaklogUseUserTokens
+ WaklogDefaultPrincipal
+Description: AFS Authentication for Apache

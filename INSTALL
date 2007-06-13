@@ -7,4 +7,11 @@ Type:
    make
    cp mod_waklog.so <wherever>
 
+Debian:
+
+   chmod +x debian/rules
+   fakeroot dpkg-buildpackage
+
+
+
 
