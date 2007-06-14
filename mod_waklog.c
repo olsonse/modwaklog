@@ -42,7 +42,7 @@ extern unixd_config_rec unixd_config;
 #define ap_user_name      unixd_config.user_name
 #define command(name, func, var, type, usage)           \
   AP_INIT_ ## type (name, (void*) func,                 \
-        (void*)APR_OFFSETOF(waklog_config, var),     \
+        (void*)APR_OFFSETOF(waklog_commands, var),     \
         OR_AUTHCFG | RSRC_CONF, usage)
 typedef struct {
        int dummy;
@@ -57,11 +57,11 @@ module waklog_module;
 #define MK_TABLE_GET ap_table_get
 #define command(name, func, var, type, usage)           \
   { name, func,                                         \
-    (void*)XtOffsetOf(waklog_config, var),           \
+    (void*)XtOffsetOf(waklog_commands, var),           \
     OR_AUTHCFG | RSRC_CONF, type, usage }
 #endif /* STANDARD20_MODULE_STUFF */
 
-#define getModConfig(P, X) P = (waklog_host_config *) ap_get_module_config( (X)->module_config, &waklog_module );
+#define getModConfig(P, X) P = (waklog_config *) ap_get_module_config( (X)->module_config, &waklog_module );
 
 #include <krb5.h>
 
@@ -97,7 +97,7 @@ typedef struct
     char	*afs_cell;
     MK_POOL      *p;
 }
-waklog_host_config;
+waklog_config;
 
 typedef struct {
 	struct ktc_token	token;
@@ -126,9 +126,9 @@ log_error(const char *file, int line, int level, int status,
     static void *
 waklog_create_server_config( MK_POOL *p, server_rec *s )
 {
-    waklog_host_config *cfg;
+    waklog_config *cfg;
 
-    cfg = (waklog_host_config *)ap_pcalloc( p, sizeof( waklog_host_config ));
+    cfg = (waklog_config *)ap_pcalloc( p, sizeof( waklog_config ));
     cfg->p = p;
     cfg->forked = 0;
     cfg->configured = 0;
@@ -146,7 +146,7 @@ waklog_create_server_config( MK_POOL *p, server_rec *s )
     static const char *
 set_waklog_protect( cmd_parms *params, void *mconfig, int flag )
 {
-    waklog_host_config          *cfg;
+    waklog_config          *cfg;
 
     getModConfig(cfg, params->server );
 
@@ -160,7 +160,7 @@ set_waklog_protect( cmd_parms *params, void *mconfig, int flag )
     static const char *
 set_waklog_keytab( cmd_parms *params, void *mconfig, char *file  )
 {
-    waklog_host_config          *cfg;
+    waklog_config          *cfg;
 
     getModConfig(cfg, params->server );
 
@@ -176,7 +176,7 @@ set_waklog_keytab( cmd_parms *params, void *mconfig, char *file  )
     static const char *
 set_waklog_use_principal( cmd_parms *params, void *mconfig, char *file  )
 {
-    waklog_host_config          *cfg;
+    waklog_config          *cfg;
 
     getModConfig(cfg, params->server );
 
@@ -192,7 +192,7 @@ set_waklog_use_principal( cmd_parms *params, void *mconfig, char *file  )
     static const char *
 set_waklog_use_afs_cell( cmd_parms *params, void *mconfig, char *file  )
 {
-    waklog_host_config          *cfg;
+    waklog_config          *cfg;
 
     getModConfig(cfg, params->server );
 
@@ -231,7 +231,7 @@ typedef struct {
   char *wak_keytab;
   char *wak_ktprinc;
   char *wak_afscell;
-} waklog_config;
+} waklog_commands;
 
 command_rec waklog_cmds[ ] =
 {
@@ -276,7 +276,7 @@ waklog_kinit( server_rec *s )
     krb5_keytab			keytab = NULL;
     char			ktbuf[ MAX_KEYTAB_NAME_LEN + 1 ];
     int				i;
-    waklog_host_config *cfg;
+    waklog_config *cfg;
 
     log_error( APLOG_MARK, APLOG_DEBUG, 0, s,
 		"mod_waklog: waklog_kinit called: pid: %d", getpid() );
@@ -389,7 +389,7 @@ waklog_aklog( request_rec *r )
     struct ktc_principal	server = { "afs", "", "" };
     struct ktc_principal	client;
     struct ktc_token		token;
-    waklog_host_config		*cfg;
+    waklog_config		*cfg;
     int				buflen;
 
     k5path = MK_TABLE_GET( r->subprocess_env, "KRB5CCNAME" );
@@ -584,7 +584,7 @@ waklog_init_handler(apr_pool_t *p, apr_pool_t *plog,
     int rv;
     extern char	*version;
     apr_proc_t *proc;
-    waklog_host_config          *cfg;
+    waklog_config          *cfg;
     void *data;
 
     getModConfig(cfg, s);
@@ -637,7 +637,7 @@ waklog_init( server_rec *s, MK_POOL *p )
     static int
 waklog_phase0( request_rec *r )
 {
-    waklog_host_config  *cfg;
+    waklog_config  *cfg;
 
     log_error( APLOG_MARK, APLOG_DEBUG, 0, r->server,
 	       "mod_waklog: phase0 called" );
@@ -677,7 +677,7 @@ waklog_phase0( request_rec *r )
     static int
 waklog_phase7( request_rec *r )
 {
-    waklog_host_config	*cfg;
+    waklog_config	*cfg;
 
     log_error( APLOG_MARK, APLOG_DEBUG, 0, r->server,
 	       "mod_waklog: phase7 called" );
@@ -714,7 +714,7 @@ waklog_new_connection (conn_rec * c
   )
 {
   
-  waklog_config *cfg;
+  waklog_commands *cfg;
   
   log_error (APLOG_MARK, APLOG_DEBUG, 0, c->base_server,
 	     "mod_waklog: new_connection called: pid: %d", getpid ());
