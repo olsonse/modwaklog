@@ -1,4 +1,5 @@
 #define _LARGEFILE64_SOURCE
+#define _GNU_SOURCE
 
 #include "httpd.h"
 #include "http_config.h"
@@ -6,6 +7,22 @@
 #include "http_protocol.h"
 #include "http_request.h"
 #include "http_core.h"
+
+#ifdef sun
+#include <synch.h>
+#elif linux
+#define use_pthreads
+#include <features.h>
+#include <sys/types.h>
+#include <sys/mman.h>
+#include <pthread.h>
+#else
+#error "make sure you include the right stuff here"
+#endif
+
+#ifndef MAXNAMELEN
+#define MAXNAMELEN 1024
+#endif
 
 #ifdef STANDARD20_MODULE_STUFF
 #include <apr_strings.h>
@@ -15,8 +32,10 @@
 
 module AP_MODULE_DECLARE_DATA waklog_module;
 
+#include <http_conf_globals.h>
 #define MK_POOL apr_pool_t
 #define MK_TABLE_GET apr_table_get
+#define MK_TABLE_SET ap_table_set
 #include "unixd.h"
 extern unixd_config_rec unixd_config;
 #define ap_user_id        unixd_config.user_id
@@ -678,19 +697,34 @@ waklog_phase7( request_rec *r )
     return DECLINED;
 }
 
+
 static
 #ifdef STANDARD20_MODULE_STUFF
-int
+  int
 #else
-void
+  void
 #endif
-waklog_new_connection( conn_rec *c
+waklog_new_connection (conn_rec * c
 #ifdef STANDARD20_MODULE_STUFF
 		       , void *dummy
 #endif
-		       ) {
-	log_error( APLOG_MARK, APLOG_DEBUG, 0, c->base_server,
-		   "mod_waklog: new_connection called: pid: %d", getpid() );
+  )
+{
+  
+  waklog_config *cfg;
+  
+  log_error (APLOG_MARK, APLOG_DEBUG, 0, c->base_server,
+	     "mod_waklog: new_connection called: pid: %d", getpid ());
+  /*	
+	getModConfig(cfg, c->base_server);
+	
+	if ( cfg->default_principal ) {
+	  log_error(APLOG_MARK, APLOG_DEBUG, 0, c->base_server, "mod_waklog: new conn setting default user %s",
+	  cfg->default_principal);
+	  set_auth( c->base_server, NULL, 0, cfg->default_principal, cfg->default_keytab, 0);
+	}     
+  */     
+	     
     return
 #ifdef STANDARD20_MODULE_STUFF
       0
@@ -708,24 +742,26 @@ waklog_new_connection( conn_rec *c
 **
 **  Failure to "unlog" would be a security risk.
 */
-    static int
-waklog_phase2( request_rec *r )
+static int
+waklog_phase2 (request_rec * r)
 {
 
-    log_error( APLOG_MARK, APLOG_DEBUG, 0, r->server,
-	       "mod_waklog: phase2 called" );
+  log_error (APLOG_MARK, APLOG_DEBUG, 0, r->server,
+	     "mod_waklog: phase2 called");
 
-    if ( child.token.ticketLen ) {
-	memset( &child.token, 0, sizeof( struct ktc_token ) );
+  if (child.token.ticketLen)
+    {
+      memset (&child.token, 0, sizeof (struct ktc_token));
 
-	ktc_ForgetAllTokens();
+      ktc_ForgetAllTokens ();
 
-	log_error( APLOG_MARK, APLOG_DEBUG, 0, r->server,
-		   "mod_waklog: ktc_ForgetAllTokens succeeded: pid: %d", getpid() );
+      log_error (APLOG_MARK, APLOG_DEBUG, 0, r->server,
+		 "mod_waklog: ktc_ForgetAllTokens succeeded: pid: %d",
+		 getpid ());
     }
 
-    log_error( APLOG_MARK, APLOG_DEBUG, 0, r->server,
-	       "mod_waklog: phase2 returning" );
+  log_error (APLOG_MARK, APLOG_DEBUG, 0, r->server,
+	     "mod_waklog: phase2 returning");
 
     return DECLINED;
 }
@@ -764,14 +800,14 @@ module MODULE_VAR_EXPORT waklog_module = {
 };
 #else
 static void
-waklog_register_hooks(apr_pool_t *p)
+waklog_register_hooks (apr_pool_t * p)
 {
-    ap_hook_fixups(waklog_phase7, NULL, NULL, APR_HOOK_FIRST);
-    ap_hook_header_parser(waklog_phase2, NULL, NULL, APR_HOOK_FIRST);
-    ap_hook_child_init(waklog_child_init, NULL, NULL, APR_HOOK_FIRST);
-    ap_hook_post_read_request(waklog_phase0, NULL, NULL, APR_HOOK_FIRST);
-    ap_hook_pre_connection(waklog_new_connection, NULL, NULL, APR_HOOK_FIRST);
-    ap_hook_post_config(waklog_init_handler, NULL, NULL, APR_HOOK_MIDDLE);
+    ap_hook_header_parser (waklog_phase2, NULL, NULL, APR_HOOK_FIRST);
+    ap_hook_fixups (waklog_phase7, NULL, NULL, APR_HOOK_FIRST);
+    ap_hook_child_init (waklog_child_init, NULL, NULL, APR_HOOK_FIRST);
+    ap_hook_post_read_request (waklog_phase0, NULL, NULL, APR_HOOK_FIRST);
+    ap_hook_pre_connection (waklog_new_connection, NULL, NULL, APR_HOOK_FIRST);
+    ap_hook_post_config (waklog_init_handler, NULL, NULL, APR_HOOK_MIDDLE);
 }
 
 
