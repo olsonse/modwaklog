@@ -46,11 +46,116 @@ extern unixd_config_rec unixd_config;
         OR_AUTHCFG | RSRC_CONF, usage)
 typedef struct {
        int dummy;
-} child_info;
+}
+child_info;
 
 const char *userdata_key = "waklog_init"; 
 #else
 #include "ap_config.h"
+
+#define MK_POOL pool
+#define MK_TABLE_GET ap_table_get
+#define MK_TABLE_SET ap_table_set
+
+
+
+
+#include <krb5.h>
+
+#if defined(sun)
+#include <sys/ioccom.h>
+#endif /* sun */
+
+#include <stropts.h>
+#include <afs/venus.h>
+#include <afs/auth.h>
+#include <afs/dirpath.h>
+#include <afs/ptuser.h>
+#include <rx/rxkad.h>
+
+#define TKT_LIFE  ( 12 * 60 * 60 )
+#define	SLEEP_TIME	( TKT_LIFE - 5*60 )
+
+#define WAKLOG_ON 1
+#define WAKLOG_OFF 2
+#define WAKLOG_UNSET 0
+
+#ifdef WAKLOG_DEBUG
+#undef APLOG_DEBUG
+#define APLOG_DEBUG APLOG_ERR
+#endif
+
+#ifndef CELL_IN_PRINCIPAL
+int cell_in_principal = 1;
+#else
+int cell_in_principal = 0;
+#endif
+
+/* this is used to turn off pag generation for the backround worker child during startup */
+int pag_for_children = 1;
+
+typedef struct
+{
+  int forked;
+  int configured;
+  int protect;
+  int usertokens;
+  char *keytab;
+  char *principal;
+  char *default_principal;
+  char *default_keytab;
+  char *afs_cell;
+  char *path;
+  MK_POOL *p;
+}
+waklog_config;
+
+typedef struct
+{
+  struct ktc_token token;
+  char clientprincipal[MAXNAMELEN];
+  krb5_context kcontext;
+  krb5_ccache ccache;
+  struct ktc_principal server;
+  struct ktc_principal client;
+  int pr_init;
+} waklog_child_config;
+
+waklog_child_config child;
+
+struct tokencache_ent {
+  char clientprincipal[MAXNAMELEN];
+  struct ktc_token token;
+  struct ktc_principal client;
+  struct ktc_principal server;
+  time_t lastused;
+  int persist;
+};
+
+#define SHARED_TABLE_SIZE 512
+
+struct sharedspace_s {
+  int renewcount;
+  struct tokencache_ent sharedtokens[SHARED_TABLE_SIZE];
+};
+
+struct sharedspace_s *sharedspace = NULL;
+
+struct renew_ent {
+  char *keytab;
+  char *principal;
+  int lastrenewed;
+};
+
+#ifdef use_pthreads
+pthread_rwlock_t *sharedlock = NULL;
+#else
+rwlock_t *sharedlock = NULL;
+#endif
+
+struct renew_ent renewtable[SHARED_TABLE_SIZE];
+
+int renewcount = 0;
 
 module waklog_module;
 #define MK_POOL pool
@@ -79,30 +184,11 @@ module waklog_module;
 #define PRINCIPAL        "someplacewwwserver"
 #define AFS_CELL      "someplace.edu" 
 
-#define TKT_LIFE	10*60*60
-#define	SLEEP_TIME	TKT_LIFE - 5*60
 /* If there's an error, retry more aggressively */
 #define	ERR_SLEEP_TIME	5*60
 
 
 #define K5PATH		"FILE:/tmp/waklog.creds.k5"
-
-typedef struct
-{
-    int		forked;
-    int		configured;
-    int		protect;
-    char	*keytab;
-    char	*principal;
-    char	*afs_cell;
-    MK_POOL      *p;
-}
-waklog_config;
-
-typedef struct {
-	struct ktc_token	token;
-} waklog_child_config;
-waklog_child_config	child;
 
 static void
 log_error(const char *file, int line, int level, int status,
