@@ -32,7 +32,6 @@
 
 module AP_MODULE_DECLARE_DATA waklog_module;
 
-#include <http_conf_globals.h>
 #define MK_POOL apr_pool_t
 #define MK_TABLE_GET apr_table_get
 #define MK_TABLE_SET apr_table_set
@@ -77,7 +76,7 @@ module waklog_module;
 #include <rx/rxkad.h>
 
 #define KEYTAB                  "/etc/keytab.wwwserver"
-#define KEYTAB_PRINCIPAL        "someplacewwwserver"
+#define PRINCIPAL        "someplacewwwserver"
 #define AFS_CELL      "someplace.edu" 
 
 #define TKT_LIFE	10*60*60
@@ -94,7 +93,7 @@ typedef struct
     int		configured;
     int		protect;
     char	*keytab;
-    char	*keytab_principal;
+    char	*principal;
     char	*afs_cell;
     MK_POOL      *p;
 }
@@ -135,7 +134,7 @@ waklog_create_server_config( MK_POOL *p, server_rec *s )
     cfg->configured = 0;
     cfg->protect = 0;
     cfg->keytab = KEYTAB;
-    cfg->keytab_principal = KEYTAB_PRINCIPAL;
+    cfg->principal = PRINCIPAL;
     cfg->afs_cell = AFS_CELL;
 
     log_error( APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: server config created." );
@@ -175,16 +174,16 @@ set_waklog_keytab( cmd_parms *params, void *mconfig, char *file  )
 
 
     static const char *
-set_waklog_use_keytab_principal( cmd_parms *params, void *mconfig, char *file  )
+set_waklog_use_principal( cmd_parms *params, void *mconfig, char *file  )
 {
     waklog_host_config          *cfg;
 
     getModConfig(cfg, params->server );
 
     log_error( APLOG_MARK, APLOG_INFO, 0, params->server,
-		"mod_waklog: will use keytab_principal: %s", file );
+		"mod_waklog: will use principal: %s", file );
 
-    cfg->keytab_principal = ap_pstrdup ( params->pool, file );
+    cfg->principal = ap_pstrdup ( params->pool, file );
     cfg->configured = 1;
     return( NULL );
 }
@@ -240,7 +239,7 @@ command_rec waklog_cmds[ ] =
 
     command("WaklogKeytab", set_waklog_keytab, wak_keytab, TAKE1, "Use the supplied keytab rather than the default"),
 
-    command("WaklogUseKeytabPrincipal", set_waklog_use_keytab_principal, wak_ktprinc, TAKE1, "Use the supplied keytab principal rather than the default"),
+    command("WaklogUseKeytabPrincipal", set_waklog_use_principal, wak_ktprinc, TAKE1, "Use the supplied keytab principal rather than the default"),
 
     command("WaklogUseAFSCell", set_waklog_use_afs_cell, wak_afscell, TAKE1, "Use the supplied AFS cell rather than the default"),
 
@@ -300,9 +299,9 @@ waklog_kinit( server_rec *s )
     }
 
     log_error( APLOG_MARK, APLOG_DEBUG, 0, s,
-		"mod_waklog: keytab_principal: %s", cfg->keytab_principal );
+		"mod_waklog: principal: %s", cfg->principal );
 
-    if (( kerror = krb5_parse_name( kcontext, cfg->keytab_principal, &kprinc ))) {
+    if (( kerror = krb5_parse_name( kcontext, cfg->principal, &kprinc ))) {
 	log_error( APLOG_MARK, APLOG_ERR, 0, s,
 		    "mod_waklog: %s", (char *)error_message( kerror ));
 
