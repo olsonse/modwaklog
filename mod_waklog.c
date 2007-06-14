@@ -35,7 +35,7 @@ module AP_MODULE_DECLARE_DATA waklog_module;
 #include <http_conf_globals.h>
 #define MK_POOL apr_pool_t
 #define MK_TABLE_GET apr_table_get
-#define MK_TABLE_SET ap_table_set
+#define MK_TABLE_SET apr_table_set
 #include "unixd.h"
 extern unixd_config_rec unixd_config;
 #define ap_user_id        unixd_config.user_id
@@ -72,6 +72,8 @@ module waklog_module;
 #include <stropts.h>
 #include <afs/venus.h>
 #include <afs/auth.h>
+#include <afs/dirpath.h>
+#include <afs/ptuser.h>
 #include <rx/rxkad.h>
 
 #define KEYTAB                  "/etc/keytab.wwwserver"
@@ -86,7 +88,8 @@ module waklog_module;
 
 #define K5PATH		"FILE:/tmp/waklog.creds.k5"
 
-typedef struct {
+typedef struct
+{
     int		forked;
     int		configured;
     int		protect;
@@ -94,7 +97,8 @@ typedef struct {
     char	*keytab_principal;
     char	*afs_cell;
     MK_POOL      *p;
-} waklog_host_config;
+}
+waklog_host_config;
 
 typedef struct {
 	struct ktc_token	token;
