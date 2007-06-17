@@ -24,11 +24,33 @@
 #define MAXNAMELEN 1024
 #endif
 
-#ifdef STANDARD20_MODULE_STUFF
+/********************* APACHE1 ******************************************************************************/
+#ifndef STANDARD20_MODULE_STUFF
+#include "ap_config.h"
+#if defined(sun)
+#include <sys/ioccom.h>
+#endif /* sun */
+#include <http_conf_globals.h>
+#define MK_POOL pool
+#define MK_TABLE_GET ap_table_get
+#define MK_TABLE_SET ap_table_set
+#define command(name, func, var, type, usage) \
+  { name, func, \
+    NULL , \
+    RSRC_CONF | ACCESS_CONF , type, usage }
+#define command(name, func, var, type, usage)           \
+  { name, func,                                         \
+    (void*)XtOffsetOf(waklog_commands, var),           \
+    OR_AUTHCFG | RSRC_CONF, type, usage }
+
+/********************* APACHE2 ******************************************************************************/
+#else
 #include <apr_strings.h>
 #include <apr_base64.h>
-#include <apr_compat.h>
-#include <apu_compat.h>
+//#include <ap_compat.h>
+#define ap_pcalloc apr_pcalloc
+#define ap_pdupstr apr_pdupstr
+#define ap_pstrdup apr_pstrdup
 
 module AP_MODULE_DECLARE_DATA waklog_module;
 
@@ -42,30 +64,19 @@ extern unixd_config_rec unixd_config;
 #define ap_user_name      unixd_config.user_name
 #define command(name, func, var, type, usage)           \
   AP_INIT_ ## type (name, (void*) func,                 \
-        (void*)APR_OFFSETOF(waklog_commands, var),     \
-        OR_AUTHCFG | RSRC_CONF, usage)
-typedef struct {
+        NULL,     \
+        RSRC_CONF | ACCESS_CONF, usage)
+typedef struct
+{
        int dummy;
 }
 child_info;
 
 const char *userdata_key = "waklog_init"; 
-#else
-#include "ap_config.h"
-
-#define MK_POOL pool
-#define MK_TABLE_GET ap_table_get
-#define MK_TABLE_SET ap_table_set
-
-
-
+#endif /* STANDARD20_MODULE_STUFF */
+/**************************************************************************************************/
 
 #include <krb5.h>
-
-#if defined(sun)
-#include <sys/ioccom.h>
-#endif /* sun */
-
 #include <stropts.h>
 #include <afs/venus.h>
 #include <afs/auth.h>
@@ -158,13 +169,7 @@ struct renew_ent renewtable[SHARED_TABLE_SIZE];
 int renewcount = 0;
 
 module waklog_module;
-#define MK_POOL pool
-#define MK_TABLE_GET ap_table_get
-#define command(name, func, var, type, usage)           \
-  { name, func,                                         \
-    (void*)XtOffsetOf(waklog_commands, var),           \
-    OR_AUTHCFG | RSRC_CONF, type, usage }
-#endif /* STANDARD20_MODULE_STUFF */
+
 
 #define getModConfig(P, X) P = (waklog_config *) ap_get_module_config( (X)->module_config, &waklog_module );
 
@@ -615,7 +620,11 @@ waklog_aklog( request_rec *r )
 	memmove( &child.token, &token, sizeof( struct ktc_token ) );
 
 	/* we'll need to unlog when this connection is done. */
+#ifndef STANDARD20_MODULE_STUFF
 	ap_register_cleanup( r->pool, (void *)r, token_cleanup, ap_null_cleanup );
+#else
+        /* FIXME!!!! */
+#endif
     }
 
 cleanup:

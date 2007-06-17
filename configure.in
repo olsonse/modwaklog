@@ -2,7 +2,6 @@ AC_INIT(mod_waklog.c)
 AM_INIT_AUTOMAKE(mod_waklog_so,1.0)
 AC_PROG_CC
 AC_PROG_INSTALL
-AC_PATH_PROGS(APXS, apxs)
 
 AC_ARG_WITH([afs-libs],
             [AC_HELP_STRING([--with-afs-libs],[path to afs libraries])],
