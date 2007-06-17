@@ -96,12 +96,6 @@ const char *userdata_key = "waklog_init";
 #define APLOG_DEBUG APLOG_ERR
 #endif
 
-#ifndef CELL_IN_PRINCIPAL
-int cell_in_principal = 1;
-#else
-int cell_in_principal = 0;
-#endif
-
 /* this is used to turn off pag generation for the backround worker child during startup */
 int pag_for_children = 1;
 
@@ -111,6 +105,7 @@ typedef struct
   int configured;
   int protect;
   int usertokens;
+  int cell_in_principal;
   char *keytab;
   char *principal;
   char *default_principal;
@@ -189,8 +184,6 @@ module waklog_module;
 #define ERR_SLEEP_TIME  5*60
 
 
-#define K5PATH          "FILE:/tmp/waklog.creds.k5"
-
 static void
 log_error (const char *file, int line, int level, int status,
            const server_rec * s, const char *fmt, ...)
@@ -261,6 +254,8 @@ set_auth ( server_rec *s, request_rec *r, int self, char *principal, char *keyta
   int stored = -1;
   time_t mytime;
   int indentical;
+  int cell_in_principal;
+  int attempt;
   
   char k5user[MAXNAMELEN];
   char *k5secret;
@@ -487,36 +482,49 @@ set_auth ( server_rec *s, request_rec *r, int self, char *principal, char *keyta
     /* now, to the 'aklog' portion of our program. */
     
     strncpy( buf, "afs", sizeof(buf) - 1 );
-    
-    if (cell_in_principal) {
-      strncat(buf, "/", sizeof(buf) - strlen(buf) - 1);
-      strncat(buf, cfg->afs_cell, sizeof(buf) - strlen(buf) - 1);
+
+    /** we make two attempts here, one for afs@REALM and one for afs/cell@REALM */
+    for(attempt = 0; attempt <= 1; attempt++) {
+      cell_in_principal = (cfg->cell_in_principal + attempt) % 2;
+
+      log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: cell_in_principal=%d", cell_in_principal );
+      if (cell_in_principal) {
+        strncat(buf, "/", sizeof(buf) - strlen(buf) - 1);
+        strncat(buf, cfg->afs_cell, sizeof(buf) - strlen(buf) - 1);
+      }
+      
+      log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: using AFS principal: %s", buf);
+      
+      if ((kerror = krb5_parse_name (child.kcontext, buf, &increds.server))) {
+        log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: krb5_parse name %s", error_message(kerror));
+        goto cleanup;
+      }
+      
+      if ((kerror = krb5_cc_get_principal(child.kcontext, child.ccache, &increds.client))) {
+        log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: krb5_cc_get_princ %s", error_message(kerror));
+        goto cleanup;
+      }
+      
+      log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: retrieved data from ccache for %s", k5user);
+      
+      increds.times.endtime = 0;
+      
+      increds.keyblock.enctype = ENCTYPE_DES_CBC_CRC;
+      
+      if (kerror = krb5_get_credentials (child.kcontext, 0, child.ccache, &increds, &v5credsp )) {
+        /* only complain once we've tried both afs@REALM and afs/cell@REALM */
+        if (attempt>=1) {
+          log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: krb5_get_credentials: %s",
+                    error_message(kerror));
+          goto cleanup;
+        } else {
+          continue;
+        }
+      }
+      cfg->cell_in_principal = cell_in_principal;
+      break;
     }
 
-    log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: using AFS principal: %s", buf);
-    
-    if ((kerror = krb5_parse_name (child.kcontext, buf, &increds.server))) {
-      log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: krb5_parse name %s", error_message(kerror));
-      goto cleanup;
-    }
-  
-    if ((kerror = krb5_cc_get_principal(child.kcontext, child.ccache, &increds.client))) {
-      log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: krb5_cc_get_princ %s", error_message(kerror));
-      goto cleanup;
-    }
-    
-    log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: retrieved data from ccache for %s", k5user);
-    
-    increds.times.endtime = 0;
-    
-    increds.keyblock.enctype = ENCTYPE_DES_CBC_CRC;
-    
-    if (kerror = krb5_get_credentials (child.kcontext, 0, child.ccache, &increds, &v5credsp )) {
-      log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: krb5_get_credentials: %s",
-      error_message(kerror));
-      goto cleanup;
-    }
-    
     log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: get_credentials passed for %s", k5user);
     
     if ( v5credsp->ticket.length >= MAXKTCTICKETLEN ) {
@@ -875,10 +883,12 @@ set_waklog_use_afs_cell (cmd_parms * params, void *mconfig, char *file)
   log_error (APLOG_MARK, APLOG_INFO, 0, params->server,
              "mod_waklog: will use afs_cell: %s", file);
 
+  waklog_srvconfig->cell_in_principal = 0;
   waklog_srvconfig->afs_cell = ap_pstrdup (params->pool, file);
   waklog_srvconfig->configured = 1;
 
   if (waklog_mconfig != NULL) {
+    waklog_mconfig->cell_in_principal = waklog_srvconfig->cell_in_principal;
     waklog_mconfig->afs_cell = ap_pstrdup (params->pool, file);
     waklog_mconfig->configured = 1;
   }
