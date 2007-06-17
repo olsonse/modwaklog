@@ -24,7 +24,7 @@
 #define MAXNAMELEN 1024
 #endif
 
-#ifndef STANDARD20_MODULE_STUFF
+#ifdef STANDARD20_MODULE_STUFF
 #define APACHE2
 #endif
 
@@ -184,8 +184,6 @@ module waklog_module;
 #include <afs/dirpath.h>
 #include <afs/ptuser.h>
 #include <rx/rxkad.h>
-
-#define AFS_CELL      "someplace.edu" 
 
 /* If there's an error, retry more aggressively */
 #define ERR_SLEEP_TIME  5*60
@@ -490,12 +488,9 @@ set_auth ( server_rec *s, request_rec *r, int self, char *principal, char *keyta
     
     strncpy( buf, "afs", sizeof(buf) - 1 );
     
-    if ( cfg->afs_cell && strcmp( cfg->afs_cell, AFS_CELL ) ) {
+    if (cell_in_principal) {
       strncat(buf, "/", sizeof(buf) - strlen(buf) - 1);
       strncat(buf, cfg->afs_cell, sizeof(buf) - strlen(buf) - 1);
-    } else if ( cell_in_principal ) {
-      strncat(buf, "/", sizeof(buf) - strlen(buf) - 1);
-      strncat(buf, AFS_CELL, sizeof(buf) - strlen(buf) - 1);
     }
 
     log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: using AFS principal: %s", buf);
@@ -563,11 +558,7 @@ set_auth ( server_rec *s, request_rec *r, int self, char *principal, char *keyta
     strncpy(client.cell, buf, sizeof(client.cell));
     
     /* assemble the server's cell */
-    if ( cfg->afs_cell ) {
-      strncpy(server.cell, cfg->afs_cell, sizeof(server.cell) - 1);
-    } else {
-      strncpy(server.cell, AFS_CELL, sizeof(server.cell) - 1);
-    }
+    strncpy(server.cell, cfg->afs_cell, sizeof(server.cell) - 1);
     
     log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: preparing to init PTS connection for %s", server.cell);
     
@@ -877,14 +868,20 @@ set_waklog_principal (cmd_parms *params, void *mconfig, char *principal, char *k
 static const char *
 set_waklog_use_afs_cell (cmd_parms * params, void *mconfig, char *file)
 {
-  waklog_config *cfg = mconfig ? ( waklog_config * ) mconfig : 
+  waklog_config *waklog_mconfig = ( waklog_config * ) mconfig;
+  waklog_config *waklog_srvconfig =
     ( waklog_config * ) ap_get_module_config(params->server->module_config, &waklog_module );
 
-  log_error (APLOG_MARK, APLOG_DEBUG, 0, params->server,
+  log_error (APLOG_MARK, APLOG_INFO, 0, params->server,
              "mod_waklog: will use afs_cell: %s", file);
 
-  cfg->afs_cell = ap_pstrdup (params->pool, file);
-  cfg->configured = 1;
+  waklog_srvconfig->afs_cell = ap_pstrdup (params->pool, file);
+  waklog_srvconfig->configured = 1;
+
+  if (waklog_mconfig != NULL) {
+    waklog_mconfig->afs_cell = ap_pstrdup (params->pool, file);
+    waklog_mconfig->configured = 1;
+  }
   return (NULL);
 }
 
@@ -976,8 +973,6 @@ waklog_child_init (server_rec * s, MK_POOL * p)
   
   char *cell;
   
-  cell = strdup(AFS_CELL);
-  
   log_error (APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: child_init called for pid %d", getpid());
   
   if ( !sharedspace ) {
@@ -1008,6 +1003,7 @@ waklog_child_init (server_rec * s, MK_POOL * p)
     set_auth( s, NULL, 0, cfg->default_principal, cfg->default_keytab, 0);
   }
 
+  cell = strdup(cfg->afs_cell);
   pr_Initialize(  0, AFSDIR_CLIENT_ETC_DIR, cell );
 
 #ifdef APACHE2
@@ -1088,7 +1084,7 @@ waklog_child_routine (void *data, child_info * pinfo)
   }
   
   /* need to do this so we can make PTS calls */
-  cell = strdup(AFS_CELL); /* stupid */
+  cell = strdup(cfg->afs_cell); /* stupid */
   pr_Initialize(  0, AFSDIR_CLIENT_ETC_DIR, cell );
   
   while(1) {
@@ -1155,6 +1151,14 @@ waklog_init_handler (apr_pool_t * p, apr_pool_t * plog,
    * see http://issues.apache.org/bugzilla/show_bug.cgi?id=37519 */
   apr_pool_userdata_get (&data, userdata_key, s->process->pool);
 
+
+  if (cfg->afs_cell==NULL) {
+      log_error (APLOG_MARK, APLOG_ERR, 0, s,
+                 "mod_waklog: afs_cell==NULL; please provide the WaklogUseAFSCell directive");
+      /** clobber apache */
+      exit(-1);
+  }
+
   if (!data)
     {
       apr_pool_userdata_set ((const void *) 1, userdata_key,
@@ -1163,7 +1167,7 @@ waklog_init_handler (apr_pool_t * p, apr_pool_t * plog,
   else
     {
       log_error (APLOG_MARK, APLOG_INFO, 0, s,
-                 "mod_waklog: version %s initialized.", version);
+                 "mod_waklog: version %s initialized for cell %s", version, cfg->afs_cell);
 
       if ( sharedspace ) {
         log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: shared memory already allocated." );
