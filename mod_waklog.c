@@ -81,7 +81,7 @@ const char *userdata_key = "waklog_init";
 #include <rx/rxkad.h>
 
 #define TKT_LIFE  ( 12 * 60 * 60 )
-#define	SLEEP_TIME	( TKT_LIFE - 5*60 )
+#define SLEEP_TIME      ( TKT_LIFE - 5*60 )
 
 #define WAKLOG_ON 1
 #define WAKLOG_OFF 2
@@ -181,19 +181,19 @@ module waklog_module;
 #include <afs/ptuser.h>
 #include <rx/rxkad.h>
 
-#define KEYTAB                  "/etc/keytab.wwwserver"
-#define PRINCIPAL        "someplacewwwserver"
+#define KEYTAB        "/etc/keytab.wwwserver"
+#define PRINCIPAL     "someplacewwwserver"
 #define AFS_CELL      "someplace.edu" 
 
 /* If there's an error, retry more aggressively */
-#define	ERR_SLEEP_TIME	5*60
+#define ERR_SLEEP_TIME  5*60
 
 
-#define K5PATH		"FILE:/tmp/waklog.creds.k5"
+#define K5PATH          "FILE:/tmp/waklog.creds.k5"
 
 static void
 log_error (const char *file, int line, int level, int status,
-	   const server_rec * s, const char *fmt, ...)
+           const server_rec * s, const char *fmt, ...)
 {
   char errstr[4096];
   va_list ap;
@@ -287,7 +287,7 @@ set_auth ( server_rec *s, request_rec *r, int self, char *principal, char *keyta
     cfg = retrieve_config(r);
   } else {
     log_error (APLOG_MARK, APLOG_DEBUG, 0, s,
-		 "mod_waklog: set_auth using no config" );
+                 "mod_waklog: set_auth using no config" );
      getModConfig (cfg, s);
   }
   
@@ -726,7 +726,7 @@ waklog_create_server_config (MK_POOL * p, server_rec * s)
   cfg->configured = 0;
 
   log_error (APLOG_MARK, APLOG_DEBUG, 0, s,
-	     "mod_waklog: server config created.");
+             "mod_waklog: server config created.");
 
   return (cfg);
 }
@@ -820,7 +820,7 @@ set_waklog_protect (cmd_parms * params, void *mconfig, int flag)
   cfg->protect = flag;
   cfg->configured = 1;
   log_error (APLOG_MARK, APLOG_DEBUG, 0, params->server,
-	     "mod_waklog: waklog_protect set on %s", cfg->path ? cfg->path : "NULL");
+             "mod_waklog: waklog_protect set on %s", cfg->path ? cfg->path : "NULL");
   return (NULL);
 }
 
@@ -860,9 +860,9 @@ set_waklog_principal (cmd_parms *params, void *mconfig, char *principal, char *k
     ( waklog_config * ) ap_get_module_config(params->server->module_config, &waklog_module );
 
   log_error (APLOG_MARK, APLOG_DEBUG, 0, params->server,
-	     "mod_waklog: configuring principal: %s, keytab: %s", principal, keytab);
-		
-	cfg->principal = ap_pstrdup(params->pool, principal);
+             "mod_waklog: configuring principal: %s, keytab: %s", principal, keytab);
+                
+        cfg->principal = ap_pstrdup(params->pool, principal);
   cfg->keytab = ap_pstrdup (params->pool, keytab);
   
   add_to_renewtable(params->pool, keytab, principal);
@@ -879,7 +879,7 @@ set_waklog_use_afs_cell (cmd_parms * params, void *mconfig, char *file)
     ( waklog_config * ) ap_get_module_config(params->server->module_config, &waklog_module );
 
   log_error (APLOG_MARK, APLOG_DEBUG, 0, params->server,
-	     "mod_waklog: will use afs_cell: %s", file);
+             "mod_waklog: will use afs_cell: %s", file);
 
   cfg->afs_cell = ap_pstrdup (params->pool, file);
   cfg->configured = 1;
@@ -895,7 +895,7 @@ set_waklog_default_principal (cmd_parms * params, void *mconfig, char *principal
   waklog_config *srvcfg = ( waklog_config * ) ap_get_module_config(params->server->module_config, &waklog_module );
 
   log_error (APLOG_MARK, APLOG_DEBUG, 0, params->server,
-	     "mod_waklog: set default princ/keytab: %s, %s for %s", principal, keytab, cfg->path ? cfg->path : "NULL");
+             "mod_waklog: set default princ/keytab: %s, %s for %s", principal, keytab, cfg->path ? cfg->path : "NULL");
 
   cfg->default_principal = ap_pstrdup (params->pool, principal);
   cfg->default_keytab = ap_pstrdup(params->pool, keytab );
@@ -927,7 +927,7 @@ set_waklog_use_usertokens (cmd_parms * params, void *mconfig, int flag)
   cfg->configured = 1;
 
   log_error (APLOG_MARK, APLOG_DEBUG, 0, params->server,
-	     "mod_waklog: waklog_use_user_tokens set");
+             "mod_waklog: waklog_use_user_tokens set");
   return (NULL);
 }
 
@@ -953,7 +953,7 @@ apr_status_t waklog_child_exit( void *sr ) {
   ktc_ForgetAllTokens ();
   
   log_error (APLOG_MARK, APLOG_DEBUG, 0, s,
-	     "mod_waklog: waklog_child_exit complete");
+             "mod_waklog: waklog_child_exit complete");
 
 #ifdef STANDARD20_MODULE_STUFF
   return APR_SUCCESS;
@@ -1013,7 +1013,7 @@ waklog_child_init (server_rec * s, MK_POOL * p)
 #endif
 
   log_error (APLOG_MARK, APLOG_DEBUG, 0, s,
-	     "mod_waklog: child_init returned");
+             "mod_waklog: child_init returned");
 
   return;
 }
@@ -1021,13 +1021,13 @@ waklog_child_init (server_rec * s, MK_POOL * p)
 command_rec waklog_cmds[] = {
   
   command ("WaklogProtected", set_waklog_protect, 0, FLAG,
-	   "enable waklog on a location or directory basis"),
+           "enable waklog on a location or directory basis"),
 
   command ("WaklogPrincipal", set_waklog_principal, 0, TAKE2,
-	   "Use the supplied keytab rather than the default"),
+           "Use the supplied keytab rather than the default"),
 
   command ("WaklogUseAFSCell", set_waklog_use_afs_cell, 0, TAKE1,
-	   "Use the supplied AFS cell rather than the default"),
+           "Use the supplied AFS cell rather than the default"),
 
   command ("WaklogUseUserTokens", set_waklog_use_usertokens, 0, FLAG,
       "Use the requesting user tokens (from webauth)"),
@@ -1053,8 +1053,8 @@ token_cleanup (void *data)
       ktc_ForgetAllTokens ();
 
       log_error (APLOG_MARK, APLOG_DEBUG, 0, r->server,
-		 "mod_waklog: ktc_ForgetAllTokens succeeded: pid: %d",
-		 getpid ());
+                 "mod_waklog: ktc_ForgetAllTokens succeeded: pid: %d",
+                 getpid ());
     }
   return 0;
 }
@@ -1129,7 +1129,7 @@ waklog_child_routine (void *data, child_info * pinfo)
 #ifdef STANDARD20_MODULE_STUFF
 static int
 waklog_init_handler (apr_pool_t * p, apr_pool_t * plog,
-		     apr_pool_t * ptemp, server_rec * s)
+                     apr_pool_t * ptemp, server_rec * s)
 {
   int rv;
   extern char *version;
@@ -1156,12 +1156,12 @@ waklog_init_handler (apr_pool_t * p, apr_pool_t * plog,
   if (!data)
     {
       apr_pool_userdata_set ((const void *) 1, userdata_key,
-			     apr_pool_cleanup_null, s->process->pool);
+                             apr_pool_cleanup_null, s->process->pool);
     }
   else
     {
       log_error (APLOG_MARK, APLOG_INFO, 0, s,
-		 "mod_waklog: version %s initialized.", version);
+                 "mod_waklog: version %s initialized.", version);
 
       if ( sharedspace ) {
         log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: shared memory already allocated." );
@@ -1234,13 +1234,13 @@ waklog_init_handler (apr_pool_t * p, apr_pool_t * plog,
       rv = apr_proc_fork (proc, s->process->pool);
 
       if (rv == APR_INCHILD)
-	{
-	  waklog_child_routine (s, NULL);
-	}
+        {
+          waklog_child_routine (s, NULL);
+        }
       else
-	{
-	  apr_pool_note_subprocess (s->process->pool, proc, APR_KILL_ALWAYS);
-	}
+        {
+          apr_pool_note_subprocess (s->process->pool, proc, APR_KILL_ALWAYS);
+        }
       /* parent and child */
       cfg->forked = proc->pid;
       pag_for_children = 1;
@@ -1276,7 +1276,7 @@ waklog_init (server_rec * s, MK_POOL * p)
 #endif
 
   log_error (APLOG_MARK, APLOG_DEBUG, 0, s,
-	     "mod_waklog: version %s initialized.", version);
+             "mod_waklog: version %s initialized.", version);
 
   if ( sharedspace ) {
     log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: shared memory already allocated." );
@@ -1343,18 +1343,18 @@ waklog_init (server_rec * s, MK_POOL * p)
   /* set our default tokens */
   
   getModConfig (cfg, s);
-		
-	oldrenewcount = sharedspace->renewcount;
-		
-	pag_for_children = 0;
-		
-	pid = ap_bspawn_child (p, waklog_child_routine, s, kill_always,
-  			 NULL, NULL, NULL);  			
-	
-	pag_for_children = 1;
-	
+                
+        oldrenewcount = sharedspace->renewcount;
+                
+        pag_for_children = 0;
+                
+        pid = ap_bspawn_child (p, waklog_child_routine, s, kill_always,
+                         NULL, NULL, NULL);                     
+        
+        pag_for_children = 1;
+        
   log_error (APLOG_MARK, APLOG_DEBUG, 0, s,
-	     "mod_waklog: ap_bspawn_child: %d.", pid);
+             "mod_waklog: ap_bspawn_child: %d.", pid);
   
   if ( use_existing == 0 ) {
     /* wait here until our child process has gone and done it's renewing thing. */
@@ -1377,7 +1377,7 @@ waklog_phase0 (request_rec * r)
   waklog_config *cfg;
 
   log_error (APLOG_MARK, APLOG_DEBUG, 0, r->server,
-	     "mod_waklog: phase0 called");
+             "mod_waklog: phase0 called");
 
   cfg = retrieve_config(r);
 
@@ -1400,7 +1400,7 @@ waklog_phase1 (request_rec * r)
   waklog_config *cfg;
 
   log_error (APLOG_MARK, APLOG_DEBUG, 0, r->server,
- 	     "mod_waklog: phase1 called");
+             "mod_waklog: phase1 called");
 
   cfg = retrieve_config(r);
 
@@ -1423,7 +1423,7 @@ waklog_phase3 (request_rec * r)
   waklog_config *cfg;
 
   log_error (APLOG_MARK, APLOG_DEBUG, 0, r->server,
- 	     "mod_waklog: phase 3 called");
+             "mod_waklog: phase 3 called");
 
   cfg = retrieve_config(r);
   
@@ -1446,7 +1446,7 @@ waklog_phase6 (request_rec * r)
   waklog_config *cfg;
 
   log_error (APLOG_MARK, APLOG_DEBUG, 0, r->server,
- 	     "mod_waklog: phase6 called");
+             "mod_waklog: phase6 called");
 
   cfg = retrieve_config(r);
   
@@ -1470,7 +1470,7 @@ waklog_phase7 (request_rec * r)
   int rc = 0;
   
   log_error (APLOG_MARK, APLOG_DEBUG, 0, r->server,
-	     "mod_waklog: phase7 called");
+             "mod_waklog: phase7 called");
 
   cfg = retrieve_config (r);
 
@@ -1498,7 +1498,7 @@ waklog_phase9 (request_rec * r)
   waklog_config *cfg;
 
   log_error (APLOG_MARK, APLOG_DEBUG, 0, r->server,
-	     "mod_waklog: phase9 called");
+             "mod_waklog: phase9 called");
 
   getModConfig (cfg, r->server);
   
@@ -1519,7 +1519,7 @@ static
 #endif
 waklog_new_connection (conn_rec * c
 #ifdef STANDARD20_MODULE_STUFF
-		       , void *dummy
+                       , void *dummy
 #endif
   )
 {
@@ -1527,17 +1527,17 @@ waklog_new_connection (conn_rec * c
   waklog_config *cfg;
   
   log_error (APLOG_MARK, APLOG_DEBUG, 0, c->base_server,
-	     "mod_waklog: new_connection called: pid: %d", getpid ());
-	
-	getModConfig(cfg, c->base_server);
-	
-	if ( cfg->default_principal ) {
-	  log_error(APLOG_MARK, APLOG_DEBUG, 0, c->base_server, "mod_waklog: new conn setting default user %s",
-	  cfg->default_principal);
-	  set_auth( c->base_server, NULL, 0, cfg->default_principal, cfg->default_keytab, 0);
-	}     
-	     
-	     
+             "mod_waklog: new_connection called: pid: %d", getpid ());
+        
+        getModConfig(cfg, c->base_server);
+        
+        if ( cfg->default_principal ) {
+          log_error(APLOG_MARK, APLOG_DEBUG, 0, c->base_server, "mod_waklog: new conn setting default user %s",
+          cfg->default_principal);
+          set_auth( c->base_server, NULL, 0, cfg->default_principal, cfg->default_keytab, 0);
+        }     
+             
+             
   return
 #ifdef STANDARD20_MODULE_STUFF
     0
@@ -1560,7 +1560,7 @@ waklog_phase2 (request_rec * r)
 {
 
   log_error (APLOG_MARK, APLOG_DEBUG, 0, r->server,
-	     "mod_waklog: phase2 called");
+             "mod_waklog: phase2 called");
 
   if (child.token.ticketLen)
     {
@@ -1569,12 +1569,12 @@ waklog_phase2 (request_rec * r)
       ktc_ForgetAllTokens ();
 
       log_error (APLOG_MARK, APLOG_DEBUG, 0, r->server,
-		 "mod_waklog: ktc_ForgetAllTokens succeeded: pid: %d",
-		 getpid ());
+                 "mod_waklog: ktc_ForgetAllTokens succeeded: pid: %d",
+                 getpid ());
     }
 
   log_error (APLOG_MARK, APLOG_DEBUG, 0, r->server,
-	     "mod_waklog: phase2 returning");
+             "mod_waklog: phase2 returning");
 
   return DECLINED;
 }
@@ -1582,29 +1582,29 @@ waklog_phase2 (request_rec * r)
 #ifndef STANDARD20_MODULE_STUFF
 module MODULE_VAR_EXPORT waklog_module = {
   STANDARD_MODULE_STUFF,
-  waklog_init,			              /* module initializer                  */
-  waklog_create_dir_config,	      /* create per-dir    config structures */
-  waklog_merge_dir_config,			  	                  /* merge  per-dir    config structures */
-  waklog_create_server_config,	  /* create per-server config structures */
-  waklog_merge_dir_config,			                      /* merge  per-server config structures */
-  waklog_cmds,			              /* table of config file commands       */
-  NULL,				                    /* [#8] MIME-typed-dispatched handlers */
-  waklog_phase1,				          /* [#1] URI to filename translation    */
-  NULL,				                    /* [#4] validate user id from request  */
-  NULL,				                    /* [#5] check if the user is ok _here_ */
-  waklog_phase3,				          /* [#3] check access by host address   */
-  waklog_phase6,				          /* [#6] determine MIME type            */
-  waklog_phase7,	                /* [#7] pre-run fixups                 */
-  waklog_phase9,			            /* [#9] log a transaction              */
-  NULL,		                        /* [#2] header parser                  */
-  waklog_child_init,	  	        /* child_init                          */
-  waklog_child_exit,			        /* child_exit                          */
-  waklog_phase0			              /* [#0] post read-request              */
+  waklog_init,                                /* module initializer                  */
+  waklog_create_dir_config,           /* create per-dir    config structures */
+  waklog_merge_dir_config,                                                /* merge  per-dir    config structures */
+  waklog_create_server_config,    /* create per-server config structures */
+  waklog_merge_dir_config,                                            /* merge  per-server config structures */
+  waklog_cmds,                                /* table of config file commands       */
+  NULL,                                             /* [#8] MIME-typed-dispatched handlers */
+  waklog_phase1,                                          /* [#1] URI to filename translation    */
+  NULL,                                             /* [#4] validate user id from request  */
+  NULL,                                             /* [#5] check if the user is ok _here_ */
+  waklog_phase3,                                          /* [#3] check access by host address   */
+  waklog_phase6,                                          /* [#6] determine MIME type            */
+  waklog_phase7,                        /* [#7] pre-run fixups                 */
+  waklog_phase9,                                    /* [#9] log a transaction              */
+  NULL,                                 /* [#2] header parser                  */
+  waklog_child_init,                    /* child_init                          */
+  waklog_child_exit,                            /* child_exit                          */
+  waklog_phase0                               /* [#0] post read-request              */
 #ifdef EAPI
-    , NULL,			          /* EAPI: add_module                    */
-  NULL,				            /* EAPI: remove_module                 */
-  NULL,				            /* EAPI: rewrite_command               */
-  waklog_new_connection		/* EAPI: new_connection                */
+    , NULL,                               /* EAPI: add_module                    */
+  NULL,                                     /* EAPI: remove_module                 */
+  NULL,                                     /* EAPI: rewrite_command               */
+  waklog_new_connection         /* EAPI: new_connection                */
 #endif
 };
 #else
@@ -1626,11 +1626,11 @@ waklog_register_hooks (apr_pool_t * p)
 
 module AP_MODULE_DECLARE_DATA waklog_module = {
   STANDARD20_MODULE_STUFF,
-  waklog_create_dir_config,	/* create per-dir    conf structures  */
-  waklog_merge_dir_config,	/* merge  per-dir    conf structures  */
-  waklog_create_server_config,	/* create per-server conf structures  */
-  waklog_merge_dir_config,	/* merge  per-server conf structures  */
-  waklog_cmds,			/* table of configuration directives  */
-  waklog_register_hooks		/* register hooks                     */
+  waklog_create_dir_config,     /* create per-dir    conf structures  */
+  waklog_merge_dir_config,      /* merge  per-dir    conf structures  */
+  waklog_create_server_config,  /* create per-server conf structures  */
+  waklog_merge_dir_config,      /* merge  per-server conf structures  */
+  waklog_cmds,                  /* table of configuration directives  */
+  waklog_register_hooks         /* register hooks                     */
 };
 #endif
