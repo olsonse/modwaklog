@@ -38,10 +38,6 @@
   { name, func, \
     NULL , \
     RSRC_CONF | ACCESS_CONF , type, usage }
-#define command(name, func, var, type, usage)           \
-  { name, func,                                         \
-    (void*)XtOffsetOf(waklog_commands, var),           \
-    OR_AUTHCFG | RSRC_CONF, type, usage }
 
 /********************* APACHE2 ******************************************************************************/
 #else
@@ -196,603 +192,1322 @@ module waklog_module;
 #define K5PATH		"FILE:/tmp/waklog.creds.k5"
 
 static void
-log_error(const char *file, int line, int level, int status,
-           const server_rec *s, const char *fmt, ...)
+log_error (const char *file, int line, int level, int status,
+	   const server_rec * s, const char *fmt, ...)
 {
-   char errstr[1024];
-   va_list ap;
+  char errstr[4096];
+  va_list ap;
 
-   va_start(ap, fmt);
-   vsnprintf(errstr, sizeof(errstr), fmt, ap);
-   va_end(ap);
+  va_start (ap, fmt);
+  vsnprintf (errstr, 1024, fmt, ap);
+  va_end (ap);
 
 #ifdef STANDARD20_MODULE_STUFF
-   ap_log_error(file, line, level | APLOG_NOERRNO, status, s, "%s", errstr);
+  ap_log_error (file, line, level | APLOG_NOERRNO, status, s, "(%d) %s", getpid(), errstr);
 #else
-   ap_log_error(file, line, level | APLOG_NOERRNO, s, "%s", errstr);
+  ap_log_error (file, line, level | APLOG_NOERRNO, s, "(%d) %s", getpid(), errstr);
 #endif
 
 }
 
-    static void *
-waklog_create_server_config( MK_POOL *p, server_rec *s )
-{
-    waklog_config *cfg;
-
-    cfg = (waklog_config *)ap_pcalloc( p, sizeof( waklog_config ));
-    cfg->p = p;
-    cfg->forked = 0;
-    cfg->configured = 0;
-    cfg->protect = 0;
-    cfg->keytab = KEYTAB;
-    cfg->principal = PRINCIPAL;
-    cfg->afs_cell = AFS_CELL;
-
-    log_error( APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: server config created." );
-    
-    return( cfg );
+waklog_config *retrieve_config(request_rec *r) {
+  
+  request_rec *my;
+  waklog_config *cfg;
+  
+  if ( r && r->main ) {
+    my = r->main;
+  } else if (r) {
+    my = r;
+  } else {
+    return NULL;
+  }
+  
+  if ( my && ( cfg = (waklog_config *) ap_get_module_config(my->per_dir_config, &waklog_module ) ) ) {
+      return cfg;
+  } else {
+    getModConfig (cfg, r->server);
+  }
+  
+  return cfg;
+  
 }
 
-
-    static const char *
-set_waklog_protect( cmd_parms *params, void *mconfig, int flag )
-{
-    waklog_config          *cfg;
-
-    getModConfig(cfg, params->server );
-
-    cfg->protect = flag;
-    cfg->configured = 1;
-    log_error( APLOG_MARK, APLOG_DEBUG, 0, params->server, "mod_waklog: waklog_protect set" );
-    return( NULL );
-}
-
-
-    static const char *
-set_waklog_keytab( cmd_parms *params, void *mconfig, char *file  )
-{
-    waklog_config          *cfg;
-
-    getModConfig(cfg, params->server );
-
-    log_error( APLOG_MARK, APLOG_INFO, 0, params->server,
-		"mod_waklog: will use keytab: %s", file );
-
-    cfg->keytab = ap_pstrdup ( params->pool, file );
-    cfg->configured = 1;
-    return( NULL );
-}
-
-
-    static const char *
-set_waklog_use_principal( cmd_parms *params, void *mconfig, char *file  )
-{
-    waklog_config          *cfg;
-
-    getModConfig(cfg, params->server );
-
-    log_error( APLOG_MARK, APLOG_INFO, 0, params->server,
-		"mod_waklog: will use principal: %s", file );
-
-    cfg->principal = ap_pstrdup ( params->pool, file );
-    cfg->configured = 1;
-    return( NULL );
-}
-
-
-    static const char *
-set_waklog_use_afs_cell( cmd_parms *params, void *mconfig, char *file  )
-{
-    waklog_config          *cfg;
-
-    getModConfig(cfg, params->server );
-
-    log_error( APLOG_MARK, APLOG_INFO, 0, params->server,
-		"mod_waklog: will use afs_cell: %s", file );
-
-    cfg->afs_cell = ap_pstrdup( params->pool, file );
-    cfg->configured = 1;
-    return( NULL );
-}
-
-
-    static void
+/* set_auth -- sets the tokens of the current process to this user.
+  if "self" is set, it divines the user from the current requests' environment.
+  otherwise, it's gettng it from principal/keytab */
+  
+int
+set_auth ( server_rec *s, request_rec *r, int self, char *principal, char *keytab, int storeonly ) {
+  
+  int i;
+  int usecached = 0;  
+  krb5_error_code kerror = 0;
+  krb5_principal kprinc = NULL;
+  krb5_get_init_creds_opt kopts;
+  krb5_creds v5creds;
+  krb5_creds increds;
+  struct ktc_principal server = { "afs", "", "" };
+  struct ktc_principal client;
+  struct ktc_token token;
+  krb5_creds *v5credsp = NULL;
+  krb5_keytab krb5kt = NULL;
+  char buf[MAXNAMELEN];
+  waklog_config *cfg;
+  int rc = 0;
+  int buflen = 0;
+  time_t oldest_time = 0;
+  int oldest;
+  int stored = -1;
+  time_t mytime;
+  int indentical;
+  
+  char k5user[MAXNAMELEN];
+  char *k5secret;
+  
+  memset((char *) &increds, 0, sizeof(increds));
+  
+  /* init some stuff if it ain't already */
+  
+  if ( ! child.kcontext ) {
+    kerror = krb5_init_context(&child.kcontext);
+  }
+  
+  if ( ( ! child.ccache ) && ( kerror = krb5_cc_resolve(child.kcontext, "MEMORY:tmpcache", &child.ccache) ) ) {
+    log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: can't initialize in-memory credentials cache %d", kerror );
+  }
+  
+  
+  log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: set_auth: %d, %s, %s, %d", self, principal ? principal : "NULL", 
+    keytab ? keytab : "NULL", storeonly);
+  
+  /* pull the server config record that we care about... */
+  
+  if ( r ) {
+    cfg = retrieve_config(r);
+  } else {
+    log_error (APLOG_MARK, APLOG_DEBUG, 0, s,
+		 "mod_waklog: set_auth using no config" );
+     getModConfig (cfg, s);
+  }
+  
+  if ( ! cfg ) {
+    log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: cfg is %d", cfg );
+  }
+  
 #ifdef STANDARD20_MODULE_STUFF
-waklog_child_init(MK_POOL *p, server_rec *s)
-#else 
-waklog_child_init(server_rec *s, MK_POOL *p)
+  if ( self ) {
+    /* pull out our principal name and stuff from the environment -- webauth better have sent
+       through.  This here is also where you'd suck stuff out of KRB5CCNAME if we were
+       using something like Cosign */
+       
+       if ( ! ( r && r->connection && r->user )) {
+         log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: self authentication selected, but no data available");
+         return -1;
+       }
+       
+       strncpy(k5user, r->user, sizeof(k5user));
+       
+       /* the other thing we need is someone's password */       
+       if ( ! ( k5secret = (char *) MK_TABLE_GET( r->notes, "ATTR_PASSWORD" ) ) ) {
+         log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: cant do self auth without a secret");
+         return -1;
+       }     
+       
+       /* we'll pick this up later after we've checked the cache and current state */
+             
+  } else
+#endif
+  if ( principal ) {
+    strncpy( k5user, principal, sizeof(k5user));
+  }
+  
+  mytime = time(0);
+  
+  /* see if we should just go ahead and ignore this call, since we already should be set to these
+     credentials */
+
+  if ( ! storeonly ) {
+
+#ifdef use_pthreads
+    pthread_rwlock_rdlock( sharedlock );
+#else
+    rw_rdlock( sharedlock );
+#endif
+
+    for ( i = 0; i < SHARED_TABLE_SIZE; ++i ) {
+    
+      /* if it's a token for the principal we're looking for, and it hasn't expired yet */
+    
+      if ( ( !strcmp( k5user,
+                      sharedspace->sharedtokens[i].clientprincipal )  ) && 
+                      ( sharedspace->sharedtokens[i].token.endTime > mytime ) ) {             
+  
+        if ( ! memcmp(&child.token, &sharedspace->sharedtokens[i].token, sizeof(child.token) ) ) {
+          indentical = 1;
+        } else {
+          indentical = 0;
+        }
+      
+        /* copy the token out of the cache and into the child object */
+      
+        strcpy(child.clientprincipal, sharedspace->sharedtokens[i].clientprincipal );
+        memcpy(&child.token, &sharedspace->sharedtokens[i].token, sizeof(child.token));
+        memcpy(&child.server, &sharedspace->sharedtokens[i].server, sizeof(child.server));
+        memcpy(&child.client, &sharedspace->sharedtokens[i].client, sizeof(child.client));
+      
+        /* set our last used time thing */
+        sharedspace->sharedtokens[i].lastused = mytime;
+      
+        usecached = 1;      
+      
+        break;
+    
+      }
+  
+    } 
+  
+    /* release the lock on the token cache */
+#ifdef use_pthreads
+    pthread_rwlock_unlock( sharedlock );
+#else
+    rw_unlock( sharedlock );
+#endif
+
+    if ( usecached ) {
+      /* release the lock on the token cache */
+      log_error(APLOG_MARK, APLOG_DEBUG, 0, s,
+                "mod_waklog: set_auth using shared token %d for %s", i, k5user ); 
+    
+    }
+  
+    /* if this is something that was in the cache, and it's the same as the token we already have stored,
+      and we weren't calling this just to renew it... */
+  
+    if ( usecached && indentical ) {
+      log_error (APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: token is identical for %s", k5user );
+      return 0;
+    }
+  
+  }
+  
+  /* if 'usecached' isn't set, we've got to get our tokens from somewhere... */
+  
+  if (( ! usecached ) && ( k5user )) {
+
+    /* clear out the creds structure */
+    memset((void *) &v5creds, 0, sizeof(v5creds));
+    
+    /* create a principal out of our k5user string */
+    
+    if ( kerror = krb5_parse_name (child.kcontext, k5user, &kprinc ) ) {
+      log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: krb5_parse_name %s", (char *) error_message(kerror) );
+      goto cleanup;
+    }
+    
+    /* create the credentials options */
+    
+    krb5_get_init_creds_opt_init ( &kopts );
+    krb5_get_init_creds_opt_set_tkt_life ( &kopts, TKT_LIFE );
+    krb5_get_init_creds_opt_set_renew_life ( &kopts, 0 );
+    krb5_get_init_creds_opt_set_forwardable ( &kopts, 0 );
+    krb5_get_init_creds_opt_set_proxiable ( &kopts, 0 );
+    
+    if ( keytab ) {
+    
+      /* if we've been passed a keytab, we're going to be getting our credentials from it */
+    
+      log_error( APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: using keytab %s", keytab);
+    
+      if ( kerror = krb5_kt_resolve(child.kcontext, keytab, &krb5kt ) ) {
+        log_error( APLOG_MARK, APLOG_ERR, 0, s,
+          "mod_waklog: krb5_kt_resolve %s", error_message(kerror) );
+        goto cleanup;
+      }
+    
+      if ((kerror = krb5_get_init_creds_keytab (child.kcontext, &v5creds,
+            kprinc, krb5kt, 0, NULL, &kopts ) ) ) {
+              log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: krb5_get_init_creds_keytab %s",
+                error_message(kerror) );
+              goto cleanup;
+      }
+      
+    } else if ( self ) {
+      
+      /* if 'self' is set, we're going to use the credentials provided in the credential information */
+      /* if you're using CoSign, you'd actually just set the ccache to the KRB5CCNAME credentials */
+      /* and skip ahead...  Our WebSSO is lame, but has a way for us to snarf the password out of */
+      /* the encrypted token for proxy-authentication stuff.  We only hand out keys that allow this */
+      /* functionality to VERY special people. */
+      
+      if ((kerror = krb5_get_init_creds_password ( child.kcontext, &v5creds,
+            kprinc, k5secret, NULL, NULL, 0, NULL, &kopts ) ) ) {
+              log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: krb5_get_init_creds_password %s",
+                error_message(kerror) );
+                /* nuke the password so it doesn't end up in core files */
+                memset(k5secret, 0, sizeof(k5secret));               
+              goto cleanup;
+      }
+      
+      memset(k5secret, 0, sizeof(k5secret));      
+      
+    } else {
+      
+      /* degenerate case -- we don't have enough information to do anything */
+      
+      log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: no keytab, no self?");
+      kerror = -1;
+      goto cleanup;
+      
+    } 
+    
+      /* initialize the credentials cache and store the stuff we just got */
+      
+    if ( kerror = krb5_cc_initialize (child.kcontext, child.ccache, kprinc)) {
+      log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: init credentials cache %s", 
+      error_message(kerror));
+      goto cleanup;
+    }
+  
+    if ( kerror = krb5_cc_store_cred(child.kcontext, child.ccache, &v5creds) ) {
+       log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: cannot store credentials %s", 
+       error_message(kerror));
+       goto cleanup;
+    }
+    
+    krb5_free_cred_contents(child.kcontext, &v5creds);
+    
+    if ( kerror ) {
+      log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: store cred %s", error_message(kerror));
+      goto cleanup;
+    }
+  
+    log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: kinit ok for %s", k5user );
+  
+    /* now, to the 'aklog' portion of our program. */
+    
+    strncpy( buf, "afs", sizeof(buf) - 1 );
+    
+    if ( cfg->afs_cell && strcmp( cfg->afs_cell, AFS_CELL ) ) {
+      strncat(buf, "/", sizeof(buf) - strlen(buf) - 1);
+      strncat(buf, cfg->afs_cell, sizeof(buf) - strlen(buf) - 1);
+    } else if ( cell_in_principal ) {
+      strncat(buf, "/", sizeof(buf) - strlen(buf) - 1);
+      strncat(buf, AFS_CELL, sizeof(buf) - strlen(buf) - 1);
+    }
+
+    log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: using AFS principal: %s", buf);
+    
+    if ((kerror = krb5_parse_name (child.kcontext, buf, &increds.server))) {
+      log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: krb5_parse name %s", error_message(kerror));
+      goto cleanup;
+    }
+  
+    if ((kerror = krb5_cc_get_principal(child.kcontext, child.ccache, &increds.client))) {
+      log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: krb5_cc_get_princ %s", error_message(kerror));
+      goto cleanup;
+    }
+    
+    log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: retrieved data from ccache for %s", k5user);
+    
+    increds.times.endtime = 0;
+    
+    increds.keyblock.enctype = ENCTYPE_DES_CBC_CRC;
+    
+    if (kerror = krb5_get_credentials (child.kcontext, 0, child.ccache, &increds, &v5credsp )) {
+      log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: krb5_get_credentials: %s",
+      error_message(kerror));
+      goto cleanup;
+    }
+    
+    log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: get_credentials passed for %s", k5user);
+    
+    if ( v5credsp->ticket.length >= MAXKTCTICKETLEN ) {
+      log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: ticket size (%d) too big to fake", 
+      v5credsp->ticket.length);
+      goto cleanup;
+    }
+
+    memset(&token, 0, sizeof(struct ktc_token));
+    
+    token.startTime = v5credsp->times.starttime ? v5credsp->times.starttime : v5credsp->times.authtime;
+    token.endTime = v5credsp->times.endtime;
+    
+    memmove( &token.sessionKey, v5credsp->keyblock.contents, v5credsp->keyblock.length);
+    token.kvno = RXKAD_TKT_TYPE_KERBEROS_V5;
+    token.ticketLen = v5credsp->ticket.length;
+    memmove( token.ticket, v5credsp->ticket.data, token.ticketLen);
+    
+    /* build the name */
+    
+    memmove( buf, v5credsp->client->data[0].data, min(v5credsp->client->data[0].length,
+      MAXKTCNAMELEN -1 ));
+    buf[v5credsp->client->data[0].length] = '\0';
+    if ( v5credsp->client->length > 1 ) {
+      strncat(buf, ".", sizeof(buf) - strlen(buf) - 1);
+      buflen = strlen(buf);
+      memmove(buf + buflen, v5credsp->client->data[1].data,
+        min(v5credsp->client->data[1].length,
+          MAXKTCNAMELEN - strlen(buf) - 1));
+      buf[buflen + v5credsp->client->data[1].length] = '\0';
+    }
+    
+    /* assemble the client */
+    strncpy(client.name, buf, sizeof(client.name) - 1 );
+    strncpy(client.instance, "", sizeof(client.instance) - 1 );
+    memmove(buf, v5credsp->client->realm.data, min(v5credsp->client->realm.length,
+            MAXKTCNAMELEN - 1));
+    buf[v5credsp->client->realm.length] = '\0';
+    strncpy(client.cell, buf, sizeof(client.cell));
+    
+    /* assemble the server's cell */
+    if ( cfg->afs_cell ) {
+      strncpy(server.cell, cfg->afs_cell, sizeof(server.cell) - 1);
+    } else {
+      strncpy(server.cell, AFS_CELL, sizeof(server.cell) - 1);
+    }
+    
+    log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: preparing to init PTS connection for %s", server.cell);
+    
+    /* fill out the AFS ID in the client name */
+    /* we've done a pr_Initialize in the child_init -- once, per process.  If you try to do it more
+     * strange things seem to happen. */
+     
+     {
+      afs_int32 viceId = 0;
+ 
+      log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: making PTS call to look up %s", client.name);
+      
+      if ( ( rc = pr_SNameToId( client.name, &viceId ) ) == 0 ) {
+        snprintf( client.name, sizeof(client.name), "AFS ID %d", viceId );
+      } else {
+        log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: PTS call returned error %d ", rc);
+      }
+            
+      log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: PTS call returned %s ", client.name);
+      
+     }
+    
+    log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: server: name %s, instance %s, cell %s",
+      server.name, server.instance, server.cell );
+      
+    log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: client: name %s, instance %s, cell %s",
+      client.name, client.instance, client.cell );
+  
+    /* copy the resulting stuff into the child structure */
+  
+    strncpy(child.clientprincipal, k5user, sizeof(child.clientprincipal));
+    memcpy(&child.token, &token, sizeof(child.token));
+    memcpy(&child.server, &server, sizeof(child.server));
+    memcpy(&child.client, &client, sizeof(child.client));
+  
+    /* stuff the resulting token-related stuff into our shared token cache */
+    /* note, that anything that was set from a keytab is "persistant", and is immune
+     * from LRU-aging.  This is because nothing but the process that's running as root
+     * can update these, and it's running every hour or so and renewing these tokens.
+     * and we don't want them aged out.
+     */
+     
+    mytime = oldest_time = time(0);
+    
+    log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: waiting for shared space for %s ", k5user);
+
+#ifdef use_pthreads
+    pthread_rwlock_wrlock(sharedlock);
+#else
+    rw_wrlock(sharedlock);
+#endif
+
+    for( i = ( SHARED_TABLE_SIZE - 1 ); i >= 0; i-- ) {
+      if ( ( sharedspace->sharedtokens[i].lastused <= oldest_time) && 
+           ( sharedspace->sharedtokens[i].persist == 0 ) ) {
+        oldest = i;
+        oldest_time = sharedspace->sharedtokens[i].lastused;
+      }      
+      if ( ! strcmp ( sharedspace->sharedtokens[i].clientprincipal,
+                      child.clientprincipal ) ) {
+        memcpy(&sharedspace->sharedtokens[i].token, &child.token, sizeof(child.token) );
+        memcpy(&sharedspace->sharedtokens[i].client, &child.client, sizeof(child.client) );
+        memcpy(&sharedspace->sharedtokens[i].server, &child.server, sizeof(child.server) );
+        sharedspace->sharedtokens[i].lastused = mytime;
+        sharedspace->sharedtokens[i].persist = keytab ? 1 : 0;
+        stored = i;
+        break;
+      }
+    }
+    
+    if ( stored == -1 ) {
+      memcpy(&sharedspace->sharedtokens[oldest].token, &child.token, sizeof(child.token) );
+      memcpy(&sharedspace->sharedtokens[oldest].client, &child.client, sizeof(child.client) );
+      memcpy(&sharedspace->sharedtokens[oldest].server, &child.server, sizeof(child.server) );
+      strcpy(sharedspace->sharedtokens[oldest].clientprincipal, child.clientprincipal );
+      sharedspace->sharedtokens[oldest].lastused = mytime;
+      sharedspace->sharedtokens[oldest].persist = keytab ? 1 : 0;
+      stored = oldest;
+    }
+
+#ifdef use_pthreads
+    pthread_rwlock_unlock(sharedlock);
+#else
+    rw_unlock(sharedlock);
+#endif
+
+    log_error( APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: token stored in slot %d for %s", stored,
+      child.clientprincipal );
+    
+  } else if ( ! usecached ) {
+    log_error( APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: set_auth divergent case");
+  }
+  
+  if ( storeonly ) {
+    goto cleanup;
+  }
+  
+  usecachedtoken:
+  
+  /* don't ask.  Something about AIX.  We're leaving it here.*/
+  /* write(2, "", 0); */
+  
+  /* we try twice, because sometimes the first one fails.  Dunno why, but it always works the second time */
+  
+  if ((rc = ktc_SetToken(&child.server, &child.token, &child.client, 0))) {
+    log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: settoken returned %s for %s -- trying again", 
+      error_message(rc), k5user);
+    if ((rc = ktc_SetToken(&child.server, &child.token, &child.client, 0))) {
+      log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: settoken2 returned %s for %s", 
+        error_message(rc), k5user);
+      goto cleanup;
+    }
+  }
+  
+  cleanup:
+  if ( v5credsp )
+    krb5_free_cred_contents(child.kcontext, v5credsp);
+  if ( increds.client )
+    krb5_free_principal (child.kcontext, increds.client);
+  if ( increds.server )
+    krb5_free_principal (child.kcontext, increds.server);
+  if ( krb5kt ) 
+    (void) krb5_kt_close(child.kcontext, krb5kt);
+  if ( kprinc )
+    krb5_free_principal (child.kcontext, kprinc);
+  
+  if ( rc ) {
+    log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: set_auth ending with %d", rc );
+  } else if ( kerror ) {
+    log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: set_auth ending with krb5 error %d, %s", kerror, error_message(kerror));
+  } else {
+    log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: set_auth ending ok");
+  }
+  
+  return kerror ? (int) kerror : (int) rc;
+  
+}
+
+
+
+static void *
+waklog_create_server_config (MK_POOL * p, server_rec * s)
+{
+  waklog_config *cfg;
+
+  cfg = (waklog_config *) ap_pcalloc (p, sizeof (waklog_config));
+  cfg->p = p;
+  memset(cfg, 0, sizeof(waklog_config));
+  cfg->path = "(server)";
+  cfg->protect = WAKLOG_UNSET;
+  cfg->usertokens = WAKLOG_UNSET;
+  cfg->keytab = WAKLOG_UNSET;
+  cfg->principal = WAKLOG_UNSET;
+  cfg->default_principal = WAKLOG_UNSET;
+  cfg->default_keytab = WAKLOG_UNSET;
+  cfg->afs_cell = WAKLOG_UNSET;
+  cfg->forked = 0;
+  cfg->configured = 0;
+
+  log_error (APLOG_MARK, APLOG_DEBUG, 0, s,
+	     "mod_waklog: server config created.");
+
+  return (cfg);
+}
+
+/* initialize with host-config information */
+
+static void *
+waklog_create_dir_config (MK_POOL * p, char *dir)
+{
+  waklog_config *cfg;
+
+  cfg = (waklog_config *) ap_pcalloc (p, sizeof (waklog_config));
+  memset(cfg, 0, sizeof(waklog_config));
+  cfg->p = p;
+  cfg->path = ap_pstrdup(p, dir );
+  cfg->protect = WAKLOG_UNSET;
+  cfg->usertokens = WAKLOG_UNSET;
+  cfg->keytab = WAKLOG_UNSET;
+  cfg->principal = WAKLOG_UNSET;
+  cfg->default_principal = WAKLOG_UNSET;
+  cfg->default_keytab = WAKLOG_UNSET;
+  cfg->afs_cell = WAKLOG_UNSET;
+  cfg->forked = 0;
+  cfg->configured = 0;
+
+  return (cfg);
+}
+
+static void *waklog_merge_dir_config(MK_POOL *p, void *parent_conf, void *newloc_conf) {
+
+  waklog_config *merged = ( waklog_config * ) ap_pcalloc(p, sizeof(waklog_config ) );
+  waklog_config *parent = ( waklog_config * ) parent_conf;
+  waklog_config *child = ( waklog_config * ) newloc_conf;
+  
+  merged->protect = child->protect != WAKLOG_UNSET ? child->protect : parent->protect;
+  
+  merged->path = child->path != WAKLOG_UNSET ? child->path : parent->path;
+  
+  merged->usertokens = child->usertokens != WAKLOG_UNSET ? child->usertokens : parent->usertokens;
+  
+  merged->principal = child->principal != WAKLOG_UNSET ? child->principal : parent->principal;
+  
+  merged->keytab = child->keytab != WAKLOG_UNSET ? child->keytab : parent->keytab;
+  
+  merged->default_keytab = child->default_keytab != WAKLOG_UNSET ? child->default_keytab : parent->default_keytab;
+  
+  merged->default_principal = child->default_principal != WAKLOG_UNSET ? child->default_principal : parent->default_principal;
+  
+  merged->afs_cell = child->afs_cell != WAKLOG_UNSET ? child->afs_cell : parent->afs_cell;
+  
+  return (void *) merged;
+  
+}
+
+static void *waklog_merge_server_config(MK_POOL *p, void *parent_conf, void *newloc_conf) {
+
+  waklog_config *merged = ( waklog_config * ) ap_pcalloc(p, sizeof(waklog_config ) );
+  waklog_config *pconf = ( waklog_config * ) parent_conf;
+  waklog_config *nconf = ( waklog_config * ) newloc_conf;
+  
+  merged->protect = nconf->protect == WAKLOG_UNSET ? pconf->protect : nconf->protect;
+
+  merged->usertokens = nconf->usertokens == WAKLOG_UNSET ? pconf->usertokens : nconf->usertokens;
+
+  merged->keytab = nconf->keytab ==  WAKLOG_UNSET ? ap_pstrdup(p, pconf->keytab) : 
+    ( nconf->keytab == WAKLOG_UNSET ? WAKLOG_UNSET : ap_pstrdup(p, pconf->keytab) );
+    
+  merged->principal = nconf->principal == WAKLOG_UNSET ? ap_pstrdup(p, pconf->principal) : 
+      ( nconf->principal == WAKLOG_UNSET ? WAKLOG_UNSET : ap_pstrdup(p, pconf->principal) );
+      
+  merged->afs_cell = nconf->afs_cell  == WAKLOG_UNSET ? ap_pstrdup(p, pconf->afs_cell) : 
+      ( nconf->afs_cell == WAKLOG_UNSET ? WAKLOG_UNSET : ap_pstrdup(p, pconf->afs_cell) );    
+  
+  merged->default_keytab = nconf->default_keytab ==  WAKLOG_UNSET ? ap_pstrdup(p, pconf->default_keytab) : 
+        ( nconf->default_keytab == WAKLOG_UNSET ? WAKLOG_UNSET : ap_pstrdup(p, pconf->default_keytab) );
+
+  merged->default_principal = nconf->default_principal == WAKLOG_UNSET ? ap_pstrdup(p, pconf->default_principal) : 
+        ( nconf->default_principal == WAKLOG_UNSET ? WAKLOG_UNSET : ap_pstrdup(p, pconf->default_principal) );
+  
+  
+  return (void *) merged;
+  
+}
+                                                                                          
+static const char *
+set_waklog_protect (cmd_parms * params, void *mconfig, int flag)
+{
+  waklog_config *cfg = mconfig ? ( waklog_config * ) mconfig : 
+    ( waklog_config * ) ap_get_module_config(params->server->module_config, &waklog_module );
+
+  cfg->protect = flag;
+  cfg->configured = 1;
+  log_error (APLOG_MARK, APLOG_DEBUG, 0, params->server,
+	     "mod_waklog: waklog_protect set on %s", cfg->path ? cfg->path : "NULL");
+  return (NULL);
+}
+
+
+/* this adds a principal/keytab pair to get their tokens renewed by the
+   child process every few centons. */
+
+void add_to_renewtable(MK_POOL *p, char *keytab, char *principal) {
+
+  int i;
+  
+  if ( renewcount >= SHARED_TABLE_SIZE ) {
+    log_error(APLOG_MARK, APLOG_DEBUG, 0, NULL, "mod_waklog: big problem.  Increase the SHARED_TABLE_SIZE or \
+      decrease your tokens.");
+    return;
+  }
+  
+  /* check to see if it's already there */
+  
+  for ( i = 0; i < renewcount; i++ ) {
+    if ( ! strcmp(renewtable[i].principal, principal ) ) {
+      return;
+    }
+  }
+
+  renewtable[renewcount].keytab = ap_pstrdup(p, keytab);
+  renewtable[renewcount].principal = ap_pstrdup(p, principal);
+  renewtable[renewcount].lastrenewed = 0;
+  ++renewcount;
+
+}
+
+static const char *
+set_waklog_principal (cmd_parms *params, void *mconfig, char *principal, char *keytab)
+{
+  waklog_config *cfg = mconfig ? ( waklog_config * ) mconfig : 
+    ( waklog_config * ) ap_get_module_config(params->server->module_config, &waklog_module );
+
+  log_error (APLOG_MARK, APLOG_DEBUG, 0, params->server,
+	     "mod_waklog: configuring principal: %s, keytab: %s", principal, keytab);
+		
+	cfg->principal = ap_pstrdup(params->pool, principal);
+  cfg->keytab = ap_pstrdup (params->pool, keytab);
+  
+  add_to_renewtable(params->pool, keytab, principal);
+  
+  cfg->configured = 1;
+  
+  return (NULL);
+}
+
+static const char *
+set_waklog_use_afs_cell (cmd_parms * params, void *mconfig, char *file)
+{
+  waklog_config *cfg = mconfig ? ( waklog_config * ) mconfig : 
+    ( waklog_config * ) ap_get_module_config(params->server->module_config, &waklog_module );
+
+  log_error (APLOG_MARK, APLOG_DEBUG, 0, params->server,
+	     "mod_waklog: will use afs_cell: %s", file);
+
+  cfg->afs_cell = ap_pstrdup (params->pool, file);
+  cfg->configured = 1;
+  return (NULL);
+}
+
+static const char *
+set_waklog_default_principal (cmd_parms * params, void *mconfig, char *principal, char *keytab)
+{
+  waklog_config *cfg = mconfig ? ( waklog_config * ) mconfig : 
+    ( waklog_config * ) ap_get_module_config(params->server->module_config, &waklog_module );
+
+  waklog_config *srvcfg = ( waklog_config * ) ap_get_module_config(params->server->module_config, &waklog_module );
+
+  log_error (APLOG_MARK, APLOG_DEBUG, 0, params->server,
+	     "mod_waklog: set default princ/keytab: %s, %s for %s", principal, keytab, cfg->path ? cfg->path : "NULL");
+
+  cfg->default_principal = ap_pstrdup (params->pool, principal);
+  cfg->default_keytab = ap_pstrdup(params->pool, keytab );
+  
+  /* this also gets set at the server level */
+  if ( mconfig && ( ! cfg->path ) ) {
+    srvcfg->default_principal = ap_pstrdup (params->pool, principal);
+    srvcfg->default_keytab = ap_pstrdup(params->pool, keytab );
+  } else {
+    log_error(APLOG_MARK, APLOG_ERR, 0, params->server, "only able to set default principal on a global level!");
+    return "Unable to set DefaultPrincipal outside of top level config!";
+  }
+  
+  add_to_renewtable( params->pool, keytab, principal );
+ 
+  cfg->configured = 1;
+  
+  return (NULL);
+}
+
+static const char *
+set_waklog_use_usertokens (cmd_parms * params, void *mconfig, int flag)
+{
+  waklog_config *cfg = mconfig ? ( waklog_config * ) mconfig : 
+    ( waklog_config * ) ap_get_module_config(params->server->module_config, &waklog_module );
+
+  cfg->usertokens = flag;
+
+  cfg->configured = 1;
+
+  log_error (APLOG_MARK, APLOG_DEBUG, 0, params->server,
+	     "mod_waklog: waklog_use_user_tokens set");
+  return (NULL);
+}
+
+
+#ifndef STANDARD20_MODULE_STUFF
+static void waklog_child_exit( server_rec *s, MK_POOL *p ) {
+#else
+apr_status_t waklog_child_exit( void *sr ) {
+
+  server_rec *s = (server_rec *) sr;
+#endif
+  
+  if ( child.ccache ) {
+    krb5_cc_close(child.kcontext, child.ccache);
+  }
+  
+  if ( child.kcontext ) {
+    krb5_free_context(child.kcontext);
+  }
+  
+  /* forget our tokens */
+  
+  ktc_ForgetAllTokens ();
+  
+  log_error (APLOG_MARK, APLOG_DEBUG, 0, s,
+	     "mod_waklog: waklog_child_exit complete");
+
+#ifdef STANDARD20_MODULE_STUFF
+  return APR_SUCCESS;
+#endif
+  
+}
+
+static void
+#ifdef STANDARD20_MODULE_STUFF
+waklog_child_init (MK_POOL * p, server_rec * s)
+#else
+waklog_child_init (server_rec * s, MK_POOL * p)
 #endif
 {
 
-    log_error( APLOG_MARK, APLOG_DEBUG, 0, s,
-		"mod_waklog: child_init called" );
-
-    memset( &child.token, 0, sizeof( struct ktc_token ) );
-
-    setpag();
-
-    log_error( APLOG_MARK, APLOG_DEBUG, 0, s,
-		"mod_waklog: child_init returned" );
-
+  krb5_error_code code;
+  waklog_config *cfg;
+  
+  char *cell;
+  
+  cell = strdup(AFS_CELL);
+  
+  log_error (APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: child_init called for pid %d", getpid());
+  
+  if ( !sharedspace ) {
+    log_error( APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: child_init called without shared space? %d", getpid());
     return;
+  }
+  
+  log_error (APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: child_init called for pid %d", getpid());
+
+  memset (&child, 0, sizeof(child));
+  
+  if ( code = krb5_init_context(&child.kcontext) ) {
+    log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: can't init kerberos context %d", code );
+  }
+  
+  if ( code = krb5_cc_resolve(child.kcontext, "MEMORY:tmpcache", &child.ccache) ) {
+    log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: can't initialize in-memory credentials cache %d", code );
+  }
+  
+  if ( pag_for_children ) {
+    setpag ();
+  }
+
+  getModConfig (cfg, s);
+
+  if ( cfg->default_principal != WAKLOG_UNSET ) {
+    log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: child_init setting default user %s, %s", cfg->default_principal, cfg->default_keytab);
+    set_auth( s, NULL, 0, cfg->default_principal, cfg->default_keytab, 0);
+  }
+
+  pr_Initialize(  0, AFSDIR_CLIENT_ETC_DIR, cell );
+
+#ifdef STANDARD20_MODULE_STUFF
+  apr_pool_cleanup_register(p, s, waklog_child_exit, apr_pool_cleanup_null);
+#endif
+
+  log_error (APLOG_MARK, APLOG_DEBUG, 0, s,
+	     "mod_waklog: child_init returned");
+
+  return;
 }
 
-typedef struct {
-  int wak_protect;
-  char *wak_keytab;
-  char *wak_ktprinc;
-  char *wak_afscell;
-} waklog_commands;
+command_rec waklog_cmds[] = {
+  
+  command ("WaklogProtected", set_waklog_protect, 0, FLAG,
+	   "enable waklog on a location or directory basis"),
 
-command_rec waklog_cmds[ ] =
-{
-    command("WaklogProtected", set_waklog_protect, wak_protect, FLAG, "enable waklog on a location or directory basis"),
+  command ("WaklogPrincipal", set_waklog_principal, 0, TAKE2,
+	   "Use the supplied keytab rather than the default"),
 
-    command("WaklogKeytab", set_waklog_keytab, wak_keytab, TAKE1, "Use the supplied keytab rather than the default"),
+  command ("WaklogUseAFSCell", set_waklog_use_afs_cell, 0, TAKE1,
+	   "Use the supplied AFS cell rather than the default"),
 
-    command("WaklogUseKeytabPrincipal", set_waklog_use_principal, wak_ktprinc, TAKE1, "Use the supplied keytab principal rather than the default"),
+  command ("WaklogUseUserTokens", set_waklog_use_usertokens, 0, FLAG,
+      "Use the requesting user tokens (from webauth)"),
 
-    command("WaklogUseAFSCell", set_waklog_use_afs_cell, wak_afscell, TAKE1, "Use the supplied AFS cell rather than the default"),
-
-    { NULL }
+  command ("WaklogDefaultPrincipal", set_waklog_default_principal, 0, TAKE2,
+      "Set the default principal that the server runs as"),
+    
+  {NULL}
 };
 
 
-    static int
-token_cleanup( void *data )
+/* not currently using this */
+
+static int
+token_cleanup (void *data)
 {
-    request_rec		*r = (request_rec *)data;
+  request_rec *r = (request_rec *) data;
 
-    if ( child.token.ticketLen ) {
-	memset( &child.token, 0, sizeof( struct ktc_token ) );
+  if (child.token.ticketLen)
+    {
+      memset (&child.token, 0, sizeof (struct ktc_token));
 
-	ktc_ForgetAllTokens();
+      ktc_ForgetAllTokens ();
 
-	log_error( APLOG_MARK, APLOG_DEBUG, 0, r->server,
-		    "mod_waklog: ktc_ForgetAllTokens succeeded: pid: %d", getpid() );
+      log_error (APLOG_MARK, APLOG_DEBUG, 0, r->server,
+		 "mod_waklog: ktc_ForgetAllTokens succeeded: pid: %d",
+		 getpid ());
     }
-    return 0;
+  return 0;
 }
 
-
-    static int
-waklog_kinit( server_rec *s )
+static int
+waklog_child_routine (void *data, child_info * pinfo)
 {
-    krb5_error_code		kerror = 0;
-    krb5_context		kcontext = NULL;
-    krb5_principal		kprinc = NULL;
-    krb5_get_init_creds_opt	kopts;
-    krb5_creds			v5creds;
-    krb5_ccache			kccache = NULL;
-    krb5_keytab			keytab = NULL;
-    char			ktbuf[ MAX_KEYTAB_NAME_LEN + 1 ];
-    int				i;
-    waklog_config *cfg;
-
-    log_error( APLOG_MARK, APLOG_DEBUG, 0, s,
-		"mod_waklog: waklog_kinit called: pid: %d", getpid() );
-
-    getModConfig(cfg, s);
-
-    if (( kerror = krb5_init_context( &kcontext ))) {
-	log_error( APLOG_MARK, APLOG_ERR, 0, s,
-		    "mod_waklog: %s", (char *)error_message( kerror ));
-
-        goto cleanup;
+  int i;
+  server_rec *s = (server_rec *) data;
+  krb5_error_code code; 
+  char *cell;
+  time_t sleep_time = ( TKT_LIFE / 2 ) ;
+  time_t when;
+  time_t left;
+  waklog_config *cfg;
+  
+  getModConfig( cfg, s );
+  
+  log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: waklog_child_routine started, running as %d", getuid());
+  
+  memset (&child, 0, sizeof(child));
+  
+  if ( code = krb5_init_context(&child.kcontext) ) {
+    log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: can't init kerberos context %d", code );
+  }
+  
+  if ( code = krb5_cc_resolve(child.kcontext, "MEMORY:tmpcache", &child.ccache) ) {
+    log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: can't initialize in-memory credentials cache %d", code );
+  }
+  
+  /* need to do this so we can make PTS calls */
+  cell = strdup(AFS_CELL); /* stupid */
+  pr_Initialize(  0, AFSDIR_CLIENT_ETC_DIR, cell );
+  
+  while(1) {
+  
+    for ( i = 0; i < renewcount; ++i ) {
+      renewtable[i].lastrenewed = time(0);
+      log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: (pid %d) renewing %s / %s", getpid(), renewtable[i].principal, 
+         renewtable[i].keytab);
+      
+      set_auth( s, NULL, 0, renewtable[i].principal, renewtable[i].keytab, 1 );
+      
+      /* if this is our default token, we want to "stash" it in our current PAG so the parent maintains readability of
+         things that it needs to read */
+      
+      if ( cfg && cfg->default_principal && ( ! strcmp(cfg->default_principal, renewtable[i].principal ) ) ) {
+        log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: renewing/setting default tokens" );
+        set_auth( s, NULL, 0, renewtable[i].principal, renewtable[i].keytab, 0 );
+      }
+      
     }
 
-    /* use the path */
-    if (( kerror = krb5_cc_resolve( kcontext, K5PATH, &kccache )) != 0 ) {
-	log_error( APLOG_MARK, APLOG_ERR, 0, s,
-		    "mod_waklog: %s", (char *)error_message( kerror ));
-
-    	goto cleanup;
-    }
-
-    log_error( APLOG_MARK, APLOG_DEBUG, 0, s,
-		"mod_waklog: principal: %s", cfg->principal );
-
-    if (( kerror = krb5_parse_name( kcontext, cfg->principal, &kprinc ))) {
-	log_error( APLOG_MARK, APLOG_ERR, 0, s,
-		    "mod_waklog: %s", (char *)error_message( kerror ));
-
-       	goto cleanup;
-    }
-
-    krb5_get_init_creds_opt_init( &kopts );
-    krb5_get_init_creds_opt_set_tkt_life( &kopts, TKT_LIFE );
-    krb5_get_init_creds_opt_set_renew_life( &kopts, 0 );
-    krb5_get_init_creds_opt_set_forwardable( &kopts, 1 );
-    krb5_get_init_creds_opt_set_proxiable( &kopts, 0 );
-
-    /* keytab from config */
-    strncpy( ktbuf, cfg->keytab, sizeof( ktbuf ) - 1 );
-
-    log_error( APLOG_MARK, APLOG_DEBUG, 0, s,
-		"mod_waklog: waklog_kinit using: %s", ktbuf );
-
-    if (( kerror = krb5_kt_resolve( kcontext, ktbuf, &keytab )) != 0 ) {
-	log_error( APLOG_MARK, APLOG_ERR, 0, s,
-		    "mod_waklog:krb5_kt_resolve %s", (char *)error_message( kerror ));
-
-    	goto cleanup;
-    }
-
-    memset( (char *)&v5creds, 0, sizeof(v5creds));
-
-    /* get the krbtgt */
-    if (( kerror = krb5_get_init_creds_keytab( kcontext, &v5creds, 
-		kprinc, keytab, 0, NULL, &kopts ))) {
-
-	log_error( APLOG_MARK, APLOG_ERR, 0, s,
-		    "mod_waklog:krb5_get_init_creds_keytab %s", (char *)error_message( kerror ));
-
-    	goto cleanup;
-    }
-
-    if (( kerror = krb5_cc_initialize( kcontext, kccache, kprinc )) != 0 ) {
-	log_error( APLOG_MARK, APLOG_ERR, 0, s,
-		    "mod_waklog:krb5_cc_initialize %s", (char *)error_message( kerror ));
-
-    	goto cleanup;
-    }
-
-    kerror = krb5_cc_store_cred( kcontext, kccache, &v5creds );
-    krb5_free_cred_contents( kcontext, &v5creds );
-    if ( kerror != 0 ) {
-	log_error( APLOG_MARK, APLOG_ERR, 0, s,
-		    "mod_waklog: %s", (char *)error_message( kerror ));
-
-    	goto cleanup;
-    }
-
-    log_error( APLOG_MARK, APLOG_DEBUG, 0, s,
-		"mod_waklog: waklog_kinit success" );
-
-cleanup:
-    if ( keytab )
-	(void)krb5_kt_close( kcontext, keytab );
-    if ( kprinc )
-	krb5_free_principal( kcontext, kprinc );
-    if ( kccache )
-	krb5_cc_close( kcontext, kccache );
-    if ( kcontext )
-	krb5_free_context( kcontext );
-
-    log_error( APLOG_MARK, APLOG_DEBUG, 0, s,
-		"mod_waklog: waklog_kinit: exiting" );
-
-    return( kerror );
-}
-
-
-    static void
-waklog_aklog( request_rec *r )
-{
-    int				rc;
-    char			buf[ MAXKTCTICKETLEN ];
-    const char          	*k5path = NULL;
-    krb5_error_code		kerror;
-    krb5_context		kcontext = NULL;
-    krb5_creds			increds;
-    krb5_creds			*v5credsp = NULL;
-    krb5_ccache			kccache = NULL;
-    struct ktc_principal	server = { "afs", "", "" };
-    struct ktc_principal	client;
-    struct ktc_token		token;
-    waklog_config		*cfg;
-    int				buflen;
-
-    k5path = MK_TABLE_GET( r->subprocess_env, "KRB5CCNAME" );
-
-    log_error( APLOG_MARK, APLOG_INFO, 0, r->server,
-		"mod_waklog: waklog_aklog called: k5path: %s", k5path );
-
-    if ( k5path == NULL ) {
-	log_error( APLOG_MARK, APLOG_DEBUG, 0, r->server,
-		    "mod_waklog: waklog_aklog giving up" );
-	goto cleanup;
-    }
-
-    /*
-    ** Get/build creds from file/tgs, then see if we need to SetToken
-    */
-
-    if (( kerror = krb5_init_context( &kcontext ))) {
-	/* Authentication Required ( kerberos error ) */
-	log_error( APLOG_MARK, APLOG_ERR, 0, r->server,
-		    (char *)error_message( kerror ));
-	
-	goto cleanup;
-    }
-
-    memset( (char *)&increds, 0, sizeof(increds));
-
-    getModConfig(cfg, r->server );
-
-    /* afs/<cell> or afs */
-    strncpy( buf, "afs", sizeof( buf ) - 1 );
-    if ( strcmp( cfg->afs_cell, AFS_CELL ) ) {
-	strncat( buf, "/" ,		sizeof( buf ) - strlen( buf ) - 1 );
-	strncat( buf, cfg->afs_cell,	sizeof( buf ) - strlen( buf ) - 1 );
-    }
-
-    /* set server part */
-    if (( kerror = krb5_parse_name( kcontext, buf, &increds.server ))) {
-	log_error( APLOG_MARK, APLOG_ERR, 0, r->server,
-		    (char *)error_message( kerror ));
-
-	goto cleanup;
-    }
-
-    if (( kerror = krb5_cc_resolve( kcontext, k5path, &kccache )) != 0 ) {
-	log_error( APLOG_MARK, APLOG_ERR, 0, r->server,
-		    (char *)error_message( kerror ));
+    sharedspace->renewcount++;
     
-        goto cleanup;
+    left = sleep_time;
+    
+    while( left > 5 ) {
+      when = time(0);
+      
+      sleep(left);
+      
+      left -= ( time(0) - when );
     }
+    
+  }
 
-    /* set client part */
-    krb5_cc_get_principal( kcontext, kccache, &increds.client );
-
-    increds.times.endtime = 0;
-    /* Ask for DES since that is what V4 understands */
-    increds.keyblock.enctype = ENCTYPE_DES_CBC_CRC;
-
-    /* get the V5 credentials */
-    if (( kerror = krb5_get_credentials( kcontext, 0, kccache,
-		&increds, &v5credsp ) ) ) {
-	log_error( APLOG_MARK, APLOG_ERR, 0, r->server,
-		    "mod_waklog: krb5_get_credentials: %s", error_message( kerror ));
-	goto cleanup;
-    }
-
-    /* don't overflow */
-    if ( v5credsp->ticket.length >= MAXKTCTICKETLEN ) {	/* from krb524d.c */
-	log_error( APLOG_MARK, APLOG_ERR, 0, r->server,
-		    "mod_waklog: ticket size (%d) too big to fake", v5credsp->ticket.length );
-	goto cleanup;
-    }
-
-    /* assemble the token */
-    memset( &token, 0, sizeof( struct ktc_token ) );
-
-    token.startTime = v5credsp->times.starttime ? v5credsp->times.starttime : v5credsp->times.authtime;
-    token.endTime = v5credsp->times.endtime;
-    memmove( &token.sessionKey, v5credsp->keyblock.contents,  v5credsp->keyblock.length );
-    token.kvno = RXKAD_TKT_TYPE_KERBEROS_V5;
-    token.ticketLen = v5credsp->ticket.length;
-    memmove( token.ticket, v5credsp->ticket.data, token.ticketLen );
-
-    /* make sure we have to do this */
-    if ( child.token.kvno != token.kvno ||
-	    child.token.ticketLen != token.ticketLen ||
-	    (memcmp( &child.token.sessionKey, &token.sessionKey,
-		    sizeof( token.sessionKey ) )) ||
-	    (memcmp( child.token.ticket, token.ticket, token.ticketLen )) ) {
-
-	log_error( APLOG_MARK, APLOG_DEBUG, 0, r->server,
-		    "mod_waklog: client: %s", buf );
-
-	/* build the name */
-	memmove( buf, v5credsp->client->data[0].data,
-		min( v5credsp->client->data[0].length, MAXKTCNAMELEN - 1 ) );
-	buf[ v5credsp->client->data[0].length ] = '\0';
-	if ( v5credsp->client->length > 1 ) {
-		strncat( buf, ".", sizeof( buf ) - strlen( buf ) - 1 );
-		buflen = strlen( buf );
-		memmove( buf + buflen, v5credsp->client->data[1].data,
-			min( v5credsp->client->data[1].length, MAXKTCNAMELEN - strlen( buf ) - 1 ) );
-		buf[ buflen + v5credsp->client->data[1].length ] = '\0';
-	}
-
-	/* assemble the client */
-	strncpy( client.name, buf,		sizeof( client.name ) - 1 );
-	strncpy( client.instance, "",		sizeof( client.instance) - 1 );
-	memmove( buf, v5credsp->client->realm.data, 
-		min( v5credsp->client->realm.length, MAXKTCNAMELEN - 1 ) );
- 	buf[ v5credsp->client->realm.length ] = '\0';
- 	strncpy( client.cell, buf,		sizeof( client.cell ) - 1 );
-
-	/* assemble the server's cell */
-	strncpy( server.cell, cfg->afs_cell ,	sizeof( server.cell ) - 1 );
-
-	log_error( APLOG_MARK, APLOG_DEBUG, 0, r->server,
-		    "mod_waklog: server: name=%s, instance=%s, cell=%s",
-		    server.name, server.instance, server.cell );
-	
-	log_error( APLOG_MARK, APLOG_DEBUG, 0, r->server,
-		    "mod_waklog: client: name=%s, instance=%s, cell=%s",
-		    client.name, client.instance, client.cell );
-
-	/* use the path */
-
-	/* rumor: we have to do this for AIX 4.1.4 with AFS 3.4+ */
-	write( 2, "", 0 );
-
-	if ( ( rc = ktc_SetToken( &server, &token, &client, 0 ) ) ) {
-	    log_error( APLOG_MARK, APLOG_ERR, 0, r->server,
-			"mod_waklog: settoken returned %d", rc );
-	    goto cleanup;
-	}
-
-	/* save this */
-	memmove( &child.token, &token, sizeof( struct ktc_token ) );
-
-	/* we'll need to unlog when this connection is done. */
-#ifndef STANDARD20_MODULE_STUFF
-	ap_register_cleanup( r->pool, (void *)r, token_cleanup, ap_null_cleanup );
-#else
-        /* FIXME!!!! */
-#endif
-    }
-
-cleanup:
-    if ( v5credsp )
-	krb5_free_cred_contents( kcontext, v5credsp );
-    if ( increds.client )
-	krb5_free_principal( kcontext, increds.client );
-    if ( increds.server )
-	krb5_free_principal( kcontext, increds.server );
-    if ( kccache )
-	krb5_cc_close( kcontext, kccache );
-    if ( kcontext )
-	krb5_free_context( kcontext );
-
-    log_error( APLOG_MARK, APLOG_DEBUG, 0, r->server,
-	       "mod_waklog: finished with waklog_aklog" );
-
-    return;
-
-}
-
-    static int
-waklog_child_routine( void *s, child_info *pinfo )
-{
-    if ( !getuid() ) {
-	log_error( APLOG_MARK, APLOG_DEBUG, 0, s,
-		 "mod_waklog: waklog_child_routine called as root" );
-
-	/* this was causing the credential file to get owned by root */
-#ifdef STANDARD20_MODULE_STUFF
-	setgid(ap_group_id);
-	setuid(ap_user_id);
-#endif
-    }
-
-    while( 1 ) {
-	waklog_kinit( s );
-	log_error( APLOG_MARK, APLOG_DEBUG, 0, s,
-		 "mod_waklog: child_routine sleeping" );
-	sleep( SLEEP_TIME );
-	log_error( APLOG_MARK, APLOG_DEBUG, 0, s,
-		 "mod_waklog: slept, calling waklog_kinit" );
-    }
+  pr_End();
 
 }
 
 #ifdef STANDARD20_MODULE_STUFF
 static int
-waklog_init_handler(apr_pool_t *p, apr_pool_t *plog,
-		    apr_pool_t *ptemp, server_rec *s)
+waklog_init_handler (apr_pool_t * p, apr_pool_t * plog,
+		     apr_pool_t * ptemp, server_rec * s)
 {
-    int rv;
-    extern char	*version;
-    apr_proc_t *proc;
-    waklog_config          *cfg;
-    void *data;
+  int rv;
+  extern char *version;
+  apr_proc_t *proc;
+  waklog_config *cfg;
+  void *data;
+  int fd = -1;
+  int use_existing = 1;
+  int oldrenewcount;
+  char cache_file[MAXNAMELEN];
+#ifdef use_pthreads
+  pthread_rwlockattr_t rwlock_attr;
+#endif
 
-    getModConfig(cfg, s);
 
-    /* initialize_module() will be called twice, and if it's a DSO
-     * then all static data from the first call will be lost. Only
-     * set up our static data on the second call. 
-     * see http://issues.apache.org/bugzilla/show_bug.cgi?id=37519 */
-    apr_pool_userdata_get(&data, userdata_key, s->process->pool);
+  getModConfig (cfg, s);
 
-    if (!data) {
-	apr_pool_userdata_set((const void *)1, userdata_key,
-			      apr_pool_cleanup_null, s->process->pool);
-    } else {
-	log_error( APLOG_MARK, APLOG_INFO, 0, s,
-		   "mod_waklog: version %s initialized.", version );
-	
-	proc = (apr_proc_t *)ap_pcalloc( s->process->pool, sizeof(apr_proc_t));
-	
-	rv = apr_proc_fork(proc, s->process->pool);
-	
-	if (rv == APR_INCHILD) {
-	    waklog_child_routine(s, NULL);
-	} else {
-	    apr_pool_note_subprocess(s->process->pool, proc, APR_KILL_ALWAYS); 
-	}
-	/* parent and child */
-	cfg->forked = proc->pid;
+  /* initialize_module() will be called twice, and if it's a DSO
+   * then all static data from the first call will be lost. Only
+   * set up our static data on the second call. 
+   * see http://issues.apache.org/bugzilla/show_bug.cgi?id=37519 */
+  apr_pool_userdata_get (&data, userdata_key, s->process->pool);
+
+  if (!data)
+    {
+      apr_pool_userdata_set ((const void *) 1, userdata_key,
+			     apr_pool_cleanup_null, s->process->pool);
     }
-    return 0;
+  else
+    {
+      log_error (APLOG_MARK, APLOG_INFO, 0, s,
+		 "mod_waklog: version %s initialized.", version);
+
+      if ( sharedspace ) {
+        log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: shared memory already allocated." );
+      } else {
+
+        snprintf( cache_file, MAXNAMELEN, "/tmp/waklog_cache.%d", getpid() );
+
+        if ( ( fd = open( cache_file, O_RDWR, 0600 ) ) == -1 ) {
+
+          if ( errno == ENOENT ) {
+          
+            log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: creating shared token cache file %s", cache_file );
+            use_existing = 0;
+            if ( ( fd = open( cache_file, O_RDWR|O_CREAT|O_TRUNC, 0600 ) ) == -1 ) {
+              log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: cannot create shared token cache file %s (%d)", cache_file, errno );
+              exit(errno);
+            }
+          } else {
+            log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: cannot open existing shared token cache file %s (%d)", cache_file, errno );
+          }
+        }
+
+        if ( use_existing == 0 ) {
+          struct sharedspace_s bob;
+          log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: sizing our cache file %d to %d", fd, sizeof(struct sharedspace_s) );
+          memset( &bob, 0, sizeof(struct sharedspace_s));
+          write(fd, &bob, sizeof(struct sharedspace_s));
+          log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: done sizing our cache file to %d", sizeof(struct sharedspace_s) );
+        }
+
+        /* mmap the region */
+
+        if ( ( sharedspace = (struct sharedspace_s *) mmap ( NULL, sizeof(struct sharedspace_s), PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0 ) ) != MAP_FAILED ) {
+          log_error( APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: shared mmap region ok %d", sharedspace );
+          close(fd);
+        } else {
+           log_error( APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: mmap failed %d", errno );
+           exit(errno);
+        }
+      }
+
+#ifdef use_pthreads
+#define locktype pthread_rwlock_t
+#else
+#define locktype rwlock_t
+#endif
+
+      if ( sharedlock = ( locktype * ) mmap ( NULL, sizeof(locktype), PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANON, -1, 0 ) ) {
+#ifndef use_pthreads
+        rwlock_init(sharedlock, USYNC_PROCESS, NULL );
+#else
+        pthread_rwlockattr_init(&rwlock_attr);
+        pthread_rwlockattr_setpshared(&rwlock_attr, PTHREAD_PROCESS_SHARED);
+        pthread_rwlock_init(sharedlock, &rwlock_attr );
+#endif
+      } else {
+        log_error( APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: rwlock mmap failed %d", errno );
+      }
+
+#undef locktype
+
+      /* set our default tokens */
+
+      oldrenewcount = sharedspace->renewcount;
+
+      pag_for_children = 0;
+
+      proc = (apr_proc_t *) ap_pcalloc (s->process->pool, sizeof (apr_proc_t));
+
+      rv = apr_proc_fork (proc, s->process->pool);
+
+      if (rv == APR_INCHILD)
+	{
+	  waklog_child_routine (s, NULL);
+	}
+      else
+	{
+	  apr_pool_note_subprocess (s->process->pool, proc, APR_KILL_ALWAYS);
+	}
+      /* parent and child */
+      cfg->forked = proc->pid;
+      pag_for_children = 1;
+
+      if ( use_existing == 0 ) {
+        /* wait here until our child process has gone and done it's renewing thing. */
+        while( sharedspace->renewcount == oldrenewcount  ) {
+          log_error( APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: waiting for tokens..." );
+          sleep(2);
+        }
+      }
+
+      if ( cfg->default_principal ) {
+        set_auth( s, NULL, 0, cfg->default_principal, cfg->default_keytab, 0);
+      }
+    }
+  return 0;
 }
 #else
-    static void
-waklog_init( server_rec *s, MK_POOL *p )
+static void
+waklog_init (server_rec * s, MK_POOL * p)
 {
-    extern char	*version;
-    int pid;
+  extern char *version;
+  int pid;
+  waklog_config *cfg;
+  char *cell;
+  int fd = -1;
+  int use_existing = 1;
+  int oldrenewcount;
+  char cache_file[MAXNAMELEN];
+#ifdef use_pthreads
+  pthread_rwlockattr_t rwlock_attr;
+#endif
 
-    log_error( APLOG_MARK, APLOG_INFO, 0, s,
-	       "mod_waklog: version %s initialized.", version );
+  log_error (APLOG_MARK, APLOG_DEBUG, 0, s,
+	     "mod_waklog: version %s initialized.", version);
 
-    pid = ap_bspawn_child( p, waklog_child_routine, s, kill_always,
-	    NULL, NULL, NULL );
+  if ( sharedspace ) {
+    log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: shared memory already allocated." );
+  } else {
+    
+    snprintf( cache_file, MAXNAMELEN, "/tmp/waklog_cache.%d", getpid() );
+    
+    if ( ( fd = open( cache_file, O_RDWR, 0600 ) ) == -1 ) {
+      
+      if ( errno == ENOENT ) {
 
-    log_error( APLOG_MARK, APLOG_DEBUG, 0, s,
-	       "mod_waklog: ap_bspawn_child: %d.", pid );
+        log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: creating shared token cache file %s", cache_file );
+        use_existing = 0;
+        if ( ( fd = open( cache_file, O_RDWR|O_CREAT|O_TRUNC, 0600 ) ) == -1 ) {          
+          log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: cannot create shared token cache file %s (%d)", cache_file, errno );
+          exit(errno);
+        } 
+      } else {
+        log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: cannot open existing shared token cache file %s (%d)", cache_file, errno );
+      }
+   
+    }
+    
+    if ( use_existing == 0 ) {
+      struct sharedspace_s bob;
+      log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: sizing our cache file %d to %d", fd, sizeof(struct sharedspace_s) );
+      memset( &bob, 0, sizeof(struct sharedspace_s));
+      write(fd, &bob, sizeof(struct sharedspace_s));
+      log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: done sizing our cache file to %d", sizeof(struct sharedspace_s) );
+    }
+
+    /* mmap the region */
+    
+    if ( ( sharedspace = (struct sharedspace_s *) mmap ( NULL, sizeof(struct sharedspace_s), PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0 ) ) != -1 ) {
+      log_error( APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: shared mmap region ok %d", sharedspace );
+      close(fd);
+    } else {
+      log_error( APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: mmap failed %d", errno );
+      exit(errno);
+    }
+  }
+
+#ifdef use_pthreads
+#define locktype pthread_rwlock_t
+#else
+#define locktype rwlock_t
+#endif
+
+  /* mmap our shared space for our lock */  
+  if ( sharedlock = ( locktype * ) mmap ( NULL, sizeof(locktype), PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANON, -1, 0 ) ) {
+#ifndef use_pthreads
+    rwlock_init(sharedlock, USYNC_PROCESS, NULL );
+#else
+    pthread_rwlockattr_init(&rwlock_attr);
+    pthread_rwlockattr_setpshared(&rwlock_attr, PTHREAD_PROCESS_SHARED);
+    pthread_rwlock_init(sharedlock, &rwlock_attr );
+#endif
+  } else {
+    log_error( APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: rwlock mmap failed %d", errno );
+  }
+
+#undef locktype
+
+  /* set our default tokens */
+  
+  getModConfig (cfg, s);
+		
+	oldrenewcount = sharedspace->renewcount;
+		
+	pag_for_children = 0;
+		
+	pid = ap_bspawn_child (p, waklog_child_routine, s, kill_always,
+  			 NULL, NULL, NULL);  			
+	
+	pag_for_children = 1;
+	
+  log_error (APLOG_MARK, APLOG_DEBUG, 0, s,
+	     "mod_waklog: ap_bspawn_child: %d.", pid);
+  
+  if ( use_existing == 0 ) {
+    /* wait here until our child process has gone and done it's renewing thing. */
+    while( sharedspace->renewcount == oldrenewcount  ) {
+      log_error( APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: waiting for tokens..." );
+      sleep(2);
+    }
+  }
+  
+  if ( cfg->default_principal ) {
+    set_auth( s, NULL, 0, cfg->default_principal, cfg->default_keytab, 0);
+  }
+
 }
 #endif
 
-    static int
-waklog_phase0( request_rec *r )
+static int
+waklog_phase0 (request_rec * r)
 {
-    waklog_config  *cfg;
+  waklog_config *cfg;
 
-    log_error( APLOG_MARK, APLOG_DEBUG, 0, r->server,
-	       "mod_waklog: phase0 called" );
+  log_error (APLOG_MARK, APLOG_DEBUG, 0, r->server,
+	     "mod_waklog: phase0 called");
 
-    getModConfig(cfg, r->server );
+  cfg = retrieve_config(r);
 
-    log_error( APLOG_MARK, APLOG_DEBUG, 0, r->server,
-	"mod_waklog: phase0, checking cfg->protect" );
-    if ( !cfg->protect ) {
-	log_error( APLOG_MARK, APLOG_DEBUG, 0, r->server,
-		   "mod_waklog: phase0 declining" );
-        return( DECLINED );
-    }
+  if ( cfg->protect && cfg->principal ) {
+    log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "mod_waklog: phase0 using user %s", cfg->principal);
+    set_auth(r->server, r, 0, cfg->principal, cfg->keytab, 0);
+  } else if ( cfg->default_principal ) {
+    log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "mod_waklog: phase0 using default user %s", cfg->default_principal);
+    set_auth(r->server, r, 0, cfg->default_principal, cfg->default_keytab, 0);
+  } else {
+    log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "mod_waklog: phase0 not doing nothin.");
+  }
 
-    log_error( APLOG_MARK, APLOG_DEBUG, 0, r->server,
-	"mod_waklog: phase0, NOT setting environment variable" );
-    /* set our environment variable */
-    apr_table_set( r->subprocess_env, "KRB5CCNAME", K5PATH );
-
-    log_error( APLOG_MARK, APLOG_DEBUG, 0, r->server,
-	"mod_waklog: phase0, checking child.token.ticketLen" );
-    /* do this only if we are still unauthenticated */
-    if ( !child.token.ticketLen ) {
- 
-        log_error( APLOG_MARK, APLOG_DEBUG, 0, r->server,
-	"mod_waklog: phase0, calling waklog_aklog" );
-	/* stuff the credentials into the kernel */
-	waklog_aklog( r );
-    }
-    
-    log_error( APLOG_MARK, APLOG_DEBUG, 0, r->server,
-	       "mod_waklog: phase0 returning" );
-    return DECLINED;
+  return DECLINED;
 }
 
-
-    static int
-waklog_phase7( request_rec *r )
+static int
+waklog_phase1 (request_rec * r)
 {
-    waklog_config	*cfg;
+  waklog_config *cfg;
 
-    log_error( APLOG_MARK, APLOG_DEBUG, 0, r->server,
-	       "mod_waklog: phase7 called" );
+  log_error (APLOG_MARK, APLOG_DEBUG, 0, r->server,
+ 	     "mod_waklog: phase1 called");
 
-    getModConfig(cfg, r->server );
+  cfg = retrieve_config(r);
 
-    if ( !cfg->protect ) {
-        return( DECLINED );
-    }
+  if ( cfg->protect && cfg->principal ) {
+    log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "mod_waklog: phase1 using user %s", cfg->principal);
+    set_auth(r->server, r, 0, cfg->principal, cfg->keytab, 0);
+  } else if ( cfg->default_principal ) {
+    log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "mod_waklog: phase1 using default user %s", cfg->default_principal);
+    set_auth(r->server, r, 0, cfg->default_principal, cfg->default_keytab, 0);
+  } else {
+    log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "mod_waklog: phase1 not doing nothin.");
+  }
 
-    /* stuff the credentials into the kernel */
+  return DECLINED;
+}
 
-    log_error( APLOG_MARK, APLOG_DEBUG, 0, r->server,
-	"mod_waklog: phase7, calling waklog_aklog" );
-    waklog_aklog( r );
+static int
+waklog_phase3 (request_rec * r)
+{
+  waklog_config *cfg;
 
-    log_error( APLOG_MARK, APLOG_DEBUG, 0, r->server,
-	       "mod_waklog: phase7 returning" );
+  log_error (APLOG_MARK, APLOG_DEBUG, 0, r->server,
+ 	     "mod_waklog: phase 3 called");
 
-    return DECLINED;
+  cfg = retrieve_config(r);
+  
+  if ( cfg->protect && cfg->principal ) {
+    log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "mod_waklog: phase3 using user %s", cfg->principal);
+    set_auth(r->server, r, 0, cfg->principal, cfg->keytab, 0);
+  } else if ( cfg->default_principal ) {
+    log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "mod_waklog: phase3 using default user %s", cfg->default_principal);
+    set_auth(r->server, r, 0, cfg->default_principal, cfg->default_keytab, 0);
+  } else {
+    log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "mod_waklog: phase3 not doing nothin.");
+  }
+
+  return DECLINED;
+}
+
+static int
+waklog_phase6 (request_rec * r)
+{
+  waklog_config *cfg;
+
+  log_error (APLOG_MARK, APLOG_DEBUG, 0, r->server,
+ 	     "mod_waklog: phase6 called");
+
+  cfg = retrieve_config(r);
+  
+  if ( cfg->protect && cfg->principal ) {
+    log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "mod_waklog: phase6 using user %s", cfg->principal);
+    set_auth(r->server, r, 0, cfg->principal, cfg->keytab, 0);
+  } else if ( cfg->default_principal ) {
+    log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "mod_waklog: phase6 using default user %s", cfg->default_principal);
+    set_auth(r->server, r, 0, cfg->default_principal, cfg->default_keytab, 0);
+  } else {
+    log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "mod_waklog: phase6 not doing nothin.");
+  }
+
+  return DECLINED;
+}
+
+static int
+waklog_phase7 (request_rec * r)
+{
+  waklog_config *cfg;
+  int rc = 0;
+  
+  log_error (APLOG_MARK, APLOG_DEBUG, 0, r->server,
+	     "mod_waklog: phase7 called");
+
+  cfg = retrieve_config (r);
+
+  if ( cfg->protect && cfg->usertokens ) {
+    log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "mod_waklog: phase7 using usertokens");
+    rc = set_auth( r->server, r, 1, NULL, NULL, 0);
+  } else if ( cfg->protect && cfg->principal ) {
+    log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "mod_waklog: phase7 using user %s", cfg->principal);
+    rc = set_auth( r->server, r, 0, cfg->principal, cfg->keytab, 0);
+  } else if ( cfg->default_principal ) {
+    log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "mod_waklog: phase7 using default user %s", cfg->default_principal);
+    rc = set_auth( r->server, r, 0, cfg->default_principal, cfg->default_keytab, 0);
+  }
+  
+  if ( rc ) {
+    return 400;
+  }
+  
+  return DECLINED;
+}
+
+static int
+waklog_phase9 (request_rec * r)
+{
+  waklog_config *cfg;
+
+  log_error (APLOG_MARK, APLOG_DEBUG, 0, r->server,
+	     "mod_waklog: phase9 called");
+
+  getModConfig (cfg, r->server);
+  
+  if ( cfg->default_principal ) {
+    log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "mod_waklog: phase9 using default user %s", cfg->default_principal);
+    set_auth( r->server, r, 0, cfg->default_principal, cfg->default_keytab, 0);
+  }
+  
+  return DECLINED;
 }
 
 
@@ -809,11 +1524,11 @@ waklog_new_connection (conn_rec * c
   )
 {
   
-  waklog_commands *cfg;
+  waklog_config *cfg;
   
   log_error (APLOG_MARK, APLOG_DEBUG, 0, c->base_server,
 	     "mod_waklog: new_connection called: pid: %d", getpid ());
-  /*	
+	
 	getModConfig(cfg, c->base_server);
 	
 	if ( cfg->default_principal ) {
@@ -821,13 +1536,13 @@ waklog_new_connection (conn_rec * c
 	  cfg->default_principal);
 	  set_auth( c->base_server, NULL, 0, cfg->default_principal, cfg->default_keytab, 0);
 	}     
-  */     
 	     
-    return
+	     
+  return
 #ifdef STANDARD20_MODULE_STUFF
-      0
+    0
 #endif
-      ;
+    ;
 }
 
 
@@ -861,47 +1576,47 @@ waklog_phase2 (request_rec * r)
   log_error (APLOG_MARK, APLOG_DEBUG, 0, r->server,
 	     "mod_waklog: phase2 returning");
 
-    return DECLINED;
+  return DECLINED;
 }
 
 #ifndef STANDARD20_MODULE_STUFF
 module MODULE_VAR_EXPORT waklog_module = {
-    STANDARD_MODULE_STUFF, 
-    waklog_init,           /* module initializer                  */
-#if 0
-    waklog_create_dir_config, /* create per-dir    config structures */
-#else /* 0 */
-    NULL,                  /* create per-dir    config structures */
-#endif /* 0 */
-    NULL,                  /* merge  per-dir    config structures */
-    waklog_create_server_config, /* create per-server config structures */
-    NULL,                  /* merge  per-server config structures */
-    waklog_cmds,           /* table of config file commands       */
-    NULL,                  /* [#8] MIME-typed-dispatched handlers */
-    NULL,                  /* [#1] URI to filename translation    */
-    NULL,                  /* [#4] validate user id from request  */
-    NULL,                  /* [#5] check if the user is ok _here_ */
-    NULL,                  /* [#3] check access by host address   */
-    NULL,                  /* [#6] determine MIME type            */
-    waklog_phase7,         /* [#7] pre-run fixups                 */
-    NULL,                  /* [#9] log a transaction              */
-    waklog_phase2,         /* [#2] header parser                  */
-    waklog_child_init,     /* child_init                          */
-    NULL,                  /* child_exit                          */
-    waklog_phase0          /* [#0] post read-request              */
+  STANDARD_MODULE_STUFF,
+  waklog_init,			              /* module initializer                  */
+  waklog_create_dir_config,	      /* create per-dir    config structures */
+  waklog_merge_dir_config,			  	                  /* merge  per-dir    config structures */
+  waklog_create_server_config,	  /* create per-server config structures */
+  waklog_merge_dir_config,			                      /* merge  per-server config structures */
+  waklog_cmds,			              /* table of config file commands       */
+  NULL,				                    /* [#8] MIME-typed-dispatched handlers */
+  waklog_phase1,				          /* [#1] URI to filename translation    */
+  NULL,				                    /* [#4] validate user id from request  */
+  NULL,				                    /* [#5] check if the user is ok _here_ */
+  waklog_phase3,				          /* [#3] check access by host address   */
+  waklog_phase6,				          /* [#6] determine MIME type            */
+  waklog_phase7,	                /* [#7] pre-run fixups                 */
+  waklog_phase9,			            /* [#9] log a transaction              */
+  NULL,		                        /* [#2] header parser                  */
+  waklog_child_init,	  	        /* child_init                          */
+  waklog_child_exit,			        /* child_exit                          */
+  waklog_phase0			              /* [#0] post read-request              */
 #ifdef EAPI
-   ,NULL,                  /* EAPI: add_module                    */
-    NULL,                  /* EAPI: remove_module                 */
-    NULL,                  /* EAPI: rewrite_command               */
-    waklog_new_connection  /* EAPI: new_connection                */
+    , NULL,			          /* EAPI: add_module                    */
+  NULL,				            /* EAPI: remove_module                 */
+  NULL,				            /* EAPI: rewrite_command               */
+  waklog_new_connection		/* EAPI: new_connection                */
 #endif
 };
 #else
 static void
 waklog_register_hooks (apr_pool_t * p)
 {
+    ap_hook_translate_name (waklog_phase1, NULL, NULL, APR_HOOK_FIRST);
     ap_hook_header_parser (waklog_phase2, NULL, NULL, APR_HOOK_FIRST);
+    ap_hook_access_checker (waklog_phase3, NULL, NULL, APR_HOOK_FIRST);
+    ap_hook_type_checker (waklog_phase6, NULL, NULL, APR_HOOK_FIRST);
     ap_hook_fixups (waklog_phase7, NULL, NULL, APR_HOOK_FIRST);
+    ap_hook_log_transaction (waklog_phase9, NULL, NULL, APR_HOOK_FIRST);
     ap_hook_child_init (waklog_child_init, NULL, NULL, APR_HOOK_FIRST);
     ap_hook_post_read_request (waklog_phase0, NULL, NULL, APR_HOOK_FIRST);
     ap_hook_pre_connection (waklog_new_connection, NULL, NULL, APR_HOOK_FIRST);
@@ -909,15 +1624,13 @@ waklog_register_hooks (apr_pool_t * p)
 }
 
 
-module AP_MODULE_DECLARE_DATA waklog_module =
-{
-   STANDARD20_MODULE_STUFF,
-   NULL,                        /* create per-dir    conf structures  */
-   NULL,                        /* merge  per-dir    conf structures  */
-   waklog_create_server_config, /* create per-server conf structures  */
-   NULL,                        /* merge  per-server conf structures  */
-   waklog_cmds,                 /* table of configuration directives  */
-   waklog_register_hooks          /* register hooks                     */
+module AP_MODULE_DECLARE_DATA waklog_module = {
+  STANDARD20_MODULE_STUFF,
+  waklog_create_dir_config,	/* create per-dir    conf structures  */
+  waklog_merge_dir_config,	/* merge  per-dir    conf structures  */
+  waklog_create_server_config,	/* create per-server conf structures  */
+  waklog_merge_dir_config,	/* merge  per-server conf structures  */
+  waklog_cmds,			/* table of configuration directives  */
+  waklog_register_hooks		/* register hooks                     */
 };
 #endif
-
