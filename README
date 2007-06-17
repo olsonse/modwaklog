@@ -1,3 +1,4 @@
+______________________________________________________________________________        
 INTRO
 
 mod_waklog is an Apache module that provides aklog-like semantics
@@ -17,6 +18,44 @@ mod_waklog often is used with mod_cosign, and uses the cosign-provided
 krbtgt to acquire an AFS credential; this extends single signon to AFS
 via the web.
 
+______________________________________________________________________________        
+CONFIGURATION
+
+Mod_waklog understands these directives.  Of these, only WaklogAFSCell
+is mandatory:
+
+WaklogAFSCell
+
+  Use the supplied AFS cell (required)
+
+WaklogEnabled 
+
+  Enable waklog on a server, location, or directory basis
+
+WaklogDefaultPrincipal
+
+  Set the default principal that the server runs as; this principal
+  must have "l" access to every path that is served, regardless of
+  user credentials or WaklogLocationPrincipal directives.
+
+WaklogLocationPrincipal
+
+  Set the principal on a <Location>-specific basis
+
+WaklogDisableTokenCache (NOT YET IMPLEMENTED)
+
+  Ignore the token cache (<Location>-specific).  This is useful for
+  scripts that need kerberos tickets; for example, a perl script that
+  uses kerberos authentication to contact a database.  By supplying a
+  WaklogLocationPrincipal directive, mod_waklog can obtain the tickets
+  and tokens for the principal, but by not using the token cache the
+  script is assured that it will have tickets when it runs.
+  
+WaklogUseUserTokens 
+
+  Use the requesting user tokens (from webauth)
+
+______________________________________________________________________________        
 PHASES
 
 Apache processes a request in multiple phases.
@@ -39,6 +78,7 @@ umweb:servers at phase 0, and removes this credential at phase 2;
 directories permitted "umweb:servers rl" will allow the stat() call
 to succeed.
 
+______________________________________________________________________________        
 BUILD 
 
 make
@@ -53,6 +93,7 @@ in mod_waklog.c.  If you run make and receive many errors about apr_off_t
 being undefined, you may need to add or comment out the above line.
 
 
+______________________________________________________________________________        
 INSTALL
 
 Copy the mod_waklog.so to somewhere Apache can read and execute it.

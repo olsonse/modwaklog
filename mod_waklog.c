@@ -42,18 +42,15 @@
   { name, func, \
     NULL , \
     RSRC_CONF | ACCESS_CONF , type, usage }
+module waklog_module;
 
 /********************* APACHE2 ******************************************************************************/
 #else
 #include <apr_strings.h>
 #include <apr_base64.h>
-//#include <ap_compat.h>
 #define ap_pcalloc apr_pcalloc
 #define ap_pdupstr apr_pdupstr
 #define ap_pstrdup apr_pstrdup
-
-module AP_MODULE_DECLARE_DATA waklog_module;
-
 #define MK_POOL apr_pool_t
 #define MK_TABLE_GET apr_table_get
 #define MK_TABLE_SET apr_table_set
@@ -66,13 +63,10 @@ extern unixd_config_rec unixd_config;
   AP_INIT_ ## type (name, (void*) func,                 \
         NULL,     \
         RSRC_CONF | ACCESS_CONF, usage)
-typedef struct
-{
-       int dummy;
-}
-child_info;
-
+module AP_MODULE_DECLARE_DATA waklog_module;
+typedef struct { int dummy; } child_info;
 const char *userdata_key = "waklog_init"; 
+
 #endif /* APACHE2 */
 /**************************************************************************************************/
 
@@ -106,6 +100,7 @@ typedef struct
   int protect;
   int usertokens;
   int cell_in_principal;
+  int disable_token_cache;
   char *keytab;
   char *principal;
   char *default_principal;
@@ -163,7 +158,6 @@ struct renew_ent renewtable[SHARED_TABLE_SIZE];
 
 int renewcount = 0;
 
-module waklog_module;
 
 
 #define getModConfig(P, X) P = (waklog_config *) ap_get_module_config( (X)->module_config, &waklog_module );
@@ -179,9 +173,6 @@ module waklog_module;
 #include <afs/dirpath.h>
 #include <afs/ptuser.h>
 #include <rx/rxkad.h>
-
-/* If there's an error, retry more aggressively */
-#define ERR_SLEEP_TIME  5*60
 
 
 static void
@@ -718,6 +709,7 @@ waklog_create_server_config (MK_POOL * p, server_rec * s)
   cfg->path = "(server)";
   cfg->protect = WAKLOG_UNSET;
   cfg->usertokens = WAKLOG_UNSET;
+  cfg->disable_token_cache = WAKLOG_UNSET;
   cfg->keytab = WAKLOG_UNSET;
   cfg->principal = WAKLOG_UNSET;
   cfg->default_principal = WAKLOG_UNSET;
@@ -745,6 +737,7 @@ waklog_create_dir_config (MK_POOL * p, char *dir)
   cfg->path = ap_pstrdup(p, dir );
   cfg->protect = WAKLOG_UNSET;
   cfg->usertokens = WAKLOG_UNSET;
+  cfg->disable_token_cache = WAKLOG_UNSET;
   cfg->keytab = WAKLOG_UNSET;
   cfg->principal = WAKLOG_UNSET;
   cfg->default_principal = WAKLOG_UNSET;
@@ -767,6 +760,8 @@ static void *waklog_merge_dir_config(MK_POOL *p, void *parent_conf, void *newloc
   merged->path = child->path != WAKLOG_UNSET ? child->path : parent->path;
   
   merged->usertokens = child->usertokens != WAKLOG_UNSET ? child->usertokens : parent->usertokens;
+
+  merged->disable_token_cache = child->disable_token_cache != WAKLOG_UNSET ? child->disable_token_cache : parent->disable_token_cache;
   
   merged->principal = child->principal != WAKLOG_UNSET ? child->principal : parent->principal;
   
@@ -792,6 +787,8 @@ static void *waklog_merge_server_config(MK_POOL *p, void *parent_conf, void *new
 
   merged->usertokens = nconf->usertokens == WAKLOG_UNSET ? pconf->usertokens : nconf->usertokens;
 
+  merged->disable_token_cache = nconf->disable_token_cache == WAKLOG_UNSET ? pconf->udisable_token_cache : nconf->disable_token_cache;
+
   merged->keytab = nconf->keytab ==  WAKLOG_UNSET ? ap_pstrdup(p, pconf->keytab) : 
     ( nconf->keytab == WAKLOG_UNSET ? WAKLOG_UNSET : ap_pstrdup(p, pconf->keytab) );
     
@@ -813,7 +810,7 @@ static void *waklog_merge_server_config(MK_POOL *p, void *parent_conf, void *new
 }
                                                                                           
 static const char *
-set_waklog_protect (cmd_parms * params, void *mconfig, int flag)
+set_waklog_enabled (cmd_parms * params, void *mconfig, int flag)
 {
   waklog_config *cfg = mconfig ? ( waklog_config * ) mconfig : 
     ( waklog_config * ) ap_get_module_config(params->server->module_config, &waklog_module );
@@ -821,7 +818,7 @@ set_waklog_protect (cmd_parms * params, void *mconfig, int flag)
   cfg->protect = flag;
   cfg->configured = 1;
   log_error (APLOG_MARK, APLOG_DEBUG, 0, params->server,
-             "mod_waklog: waklog_protect set on %s", cfg->path ? cfg->path : "NULL");
+             "mod_waklog: waklog_enabled set on %s", cfg->path ? cfg->path : "NULL");
   return (NULL);
 }
 
@@ -855,7 +852,7 @@ void add_to_renewtable(MK_POOL *p, char *keytab, char *principal) {
 }
 
 static const char *
-set_waklog_principal (cmd_parms *params, void *mconfig, char *principal, char *keytab)
+set_waklog_location_principal (cmd_parms *params, void *mconfig, char *principal, char *keytab)
 {
   waklog_config *cfg = mconfig ? ( waklog_config * ) mconfig : 
     ( waklog_config * ) ap_get_module_config(params->server->module_config, &waklog_module );
@@ -874,7 +871,7 @@ set_waklog_principal (cmd_parms *params, void *mconfig, char *principal, char *k
 }
 
 static const char *
-set_waklog_use_afs_cell (cmd_parms * params, void *mconfig, char *file)
+set_waklog_afs_cell (cmd_parms * params, void *mconfig, char *file)
 {
   waklog_config *waklog_mconfig = ( waklog_config * ) mconfig;
   waklog_config *waklog_srvconfig =
@@ -937,6 +934,22 @@ set_waklog_use_usertokens (cmd_parms * params, void *mconfig, int flag)
 
   log_error (APLOG_MARK, APLOG_DEBUG, 0, params->server,
              "mod_waklog: waklog_use_user_tokens set");
+  return (NULL);
+}
+
+
+static const char *
+set_waklog_disable_token_cache (cmd_parms * params, void *mconfig, int flag)
+{
+  waklog_config *cfg = mconfig ? ( waklog_config * ) mconfig : 
+    ( waklog_config * ) ap_get_module_config(params->server->module_config, &waklog_module );
+
+  cfg->disable_token_cache = flag;
+
+  cfg->configured = 1;
+
+  log_error (APLOG_MARK, APLOG_DEBUG, 0, params->server,
+             "mod_waklog: waklog_disable_token_cache set");
   return (NULL);
 }
 
@@ -1028,21 +1041,24 @@ waklog_child_init (server_rec * s, MK_POOL * p)
 
 command_rec waklog_cmds[] = {
   
-  command ("WaklogProtected", set_waklog_protect, 0, FLAG,
-           "enable waklog on a location or directory basis"),
+  command ("WaklogAFSCell", set_waklog_afs_cell, 0, TAKE1,
+           "Use the supplied AFS cell (required)"),
 
-  command ("WaklogPrincipal", set_waklog_principal, 0, TAKE2,
-           "Use the supplied keytab rather than the default"),
-
-  command ("WaklogUseAFSCell", set_waklog_use_afs_cell, 0, TAKE1,
-           "Use the supplied AFS cell rather than the default"),
-
-  command ("WaklogUseUserTokens", set_waklog_use_usertokens, 0, FLAG,
-      "Use the requesting user tokens (from webauth)"),
+  command ("WaklogEnabled", set_waklog_enabled, 0, FLAG,
+           "enable waklog on a server, location, or directory basis"),
 
   command ("WaklogDefaultPrincipal", set_waklog_default_principal, 0, TAKE2,
-      "Set the default principal that the server runs as"),
-    
+           "Set the default principal that the server runs as"),
+
+  command ("WaklogLocationPrincipal", set_waklog_location_principal, 0, TAKE2,
+           "Set the principal on a <Location>-specific basis"),
+
+  command ("WaklogDisableTokenCache", set_waklog_disable_token_cache, 0, FLAG,
+           "Ignore the token cache (location-specific); useful for scripts that need kerberos tickets."),
+  
+  command ("WaklogUseUserTokens", set_waklog_use_usertokens, 0, FLAG,
+           "Use the requesting user tokens (from webauth)"),
+   
   {NULL}
 };
 
@@ -1164,7 +1180,7 @@ waklog_init_handler (apr_pool_t * p, apr_pool_t * plog,
 
   if (cfg->afs_cell==NULL) {
       log_error (APLOG_MARK, APLOG_ERR, 0, s,
-                 "mod_waklog: afs_cell==NULL; please provide the WaklogUseAFSCell directive");
+                 "mod_waklog: afs_cell==NULL; please provide the WaklogAFSCell directive");
       /** clobber apache */
       exit(-1);
   }
