@@ -14,7 +14,7 @@ APXSCC = `${APXS} -q CC` \
          `${APXS} -q CFLAGS`
 
 VERSION: mod_waklog.c
-	date '+UMBC_%Y%m%d' > VERSION
+	date '+SVN_%Y%m%d' > VERSION
 
 version.o: version.c mod_waklog.c VERSION
 	${APXSCC} \
