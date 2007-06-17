@@ -24,8 +24,12 @@
 #define MAXNAMELEN 1024
 #endif
 
-/********************* APACHE1 ******************************************************************************/
 #ifndef STANDARD20_MODULE_STUFF
+#define APACHE2
+#endif
+
+/********************* APACHE1 ******************************************************************************/
+#ifndef APACHE2
 #include "ap_config.h"
 #if defined(sun)
 #include <sys/ioccom.h>
@@ -69,7 +73,7 @@ typedef struct
 child_info;
 
 const char *userdata_key = "waklog_init"; 
-#endif /* STANDARD20_MODULE_STUFF */
+#endif /* APACHE2 */
 /**************************************************************************************************/
 
 #include <krb5.h>
@@ -181,8 +185,6 @@ module waklog_module;
 #include <afs/ptuser.h>
 #include <rx/rxkad.h>
 
-#define KEYTAB        "/etc/keytab.wwwserver"
-#define PRINCIPAL     "someplacewwwserver"
 #define AFS_CELL      "someplace.edu" 
 
 /* If there's an error, retry more aggressively */
@@ -202,7 +204,7 @@ log_error (const char *file, int line, int level, int status,
   vsnprintf (errstr, 1024, fmt, ap);
   va_end (ap);
 
-#ifdef STANDARD20_MODULE_STUFF
+#ifdef APACHE2
   ap_log_error (file, line, level | APLOG_NOERRNO, status, s, "(%d) %s", getpid(), errstr);
 #else
   ap_log_error (file, line, level | APLOG_NOERRNO, s, "(%d) %s", getpid(), errstr);
@@ -295,7 +297,7 @@ set_auth ( server_rec *s, request_rec *r, int self, char *principal, char *keyta
     log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: cfg is %d", cfg );
   }
   
-#ifdef STANDARD20_MODULE_STUFF
+#ifdef APACHE2
   if ( self ) {
     /* pull out our principal name and stuff from the environment -- webauth better have sent
        through.  This here is also where you'd suck stuff out of KRB5CCNAME if we were
@@ -932,7 +934,7 @@ set_waklog_use_usertokens (cmd_parms * params, void *mconfig, int flag)
 }
 
 
-#ifndef STANDARD20_MODULE_STUFF
+#ifndef APACHE2
 static void waklog_child_exit( server_rec *s, MK_POOL *p ) {
 #else
 apr_status_t waklog_child_exit( void *sr ) {
@@ -955,14 +957,14 @@ apr_status_t waklog_child_exit( void *sr ) {
   log_error (APLOG_MARK, APLOG_DEBUG, 0, s,
              "mod_waklog: waklog_child_exit complete");
 
-#ifdef STANDARD20_MODULE_STUFF
+#ifdef APACHE2
   return APR_SUCCESS;
 #endif
   
 }
 
 static void
-#ifdef STANDARD20_MODULE_STUFF
+#ifdef APACHE2
 waklog_child_init (MK_POOL * p, server_rec * s)
 #else
 waklog_child_init (server_rec * s, MK_POOL * p)
@@ -1008,7 +1010,7 @@ waklog_child_init (server_rec * s, MK_POOL * p)
 
   pr_Initialize(  0, AFSDIR_CLIENT_ETC_DIR, cell );
 
-#ifdef STANDARD20_MODULE_STUFF
+#ifdef APACHE2
   apr_pool_cleanup_register(p, s, waklog_child_exit, apr_pool_cleanup_null);
 #endif
 
@@ -1126,7 +1128,7 @@ waklog_child_routine (void *data, child_info * pinfo)
 
 }
 
-#ifdef STANDARD20_MODULE_STUFF
+#ifdef APACHE2
 static int
 waklog_init_handler (apr_pool_t * p, apr_pool_t * plog,
                      apr_pool_t * ptemp, server_rec * s)
@@ -1512,13 +1514,13 @@ waklog_phase9 (request_rec * r)
 
 
 static
-#ifdef STANDARD20_MODULE_STUFF
+#ifdef APACHE2
   int
 #else
   void
 #endif
 waklog_new_connection (conn_rec * c
-#ifdef STANDARD20_MODULE_STUFF
+#ifdef APACHE2
                        , void *dummy
 #endif
   )
@@ -1539,7 +1541,7 @@ waklog_new_connection (conn_rec * c
              
              
   return
-#ifdef STANDARD20_MODULE_STUFF
+#ifdef APACHE2
     0
 #endif
     ;
@@ -1579,7 +1581,7 @@ waklog_phase2 (request_rec * r)
   return DECLINED;
 }
 
-#ifndef STANDARD20_MODULE_STUFF
+#ifndef APACHE2
 module MODULE_VAR_EXPORT waklog_module = {
   STANDARD_MODULE_STUFF,
   waklog_init,                                /* module initializer                  */
