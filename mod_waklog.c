@@ -1584,29 +1584,29 @@ waklog_phase2 (request_rec * r)
 #ifndef APACHE2
 module MODULE_VAR_EXPORT waklog_module = {
   STANDARD_MODULE_STUFF,
-  waklog_init,                                /* module initializer                  */
+  waklog_init,                        /* module initializer                  */
   waklog_create_dir_config,           /* create per-dir    config structures */
-  waklog_merge_dir_config,                                                /* merge  per-dir    config structures */
-  waklog_create_server_config,    /* create per-server config structures */
-  waklog_merge_dir_config,                                            /* merge  per-server config structures */
-  waklog_cmds,                                /* table of config file commands       */
-  NULL,                                             /* [#8] MIME-typed-dispatched handlers */
-  waklog_phase1,                                          /* [#1] URI to filename translation    */
-  NULL,                                             /* [#4] validate user id from request  */
-  NULL,                                             /* [#5] check if the user is ok _here_ */
-  waklog_phase3,                                          /* [#3] check access by host address   */
-  waklog_phase6,                                          /* [#6] determine MIME type            */
-  waklog_phase7,                        /* [#7] pre-run fixups                 */
-  waklog_phase9,                                    /* [#9] log a transaction              */
-  NULL,                                 /* [#2] header parser                  */
-  waklog_child_init,                    /* child_init                          */
-  waklog_child_exit,                            /* child_exit                          */
-  waklog_phase0                               /* [#0] post read-request              */
+  waklog_merge_dir_config,            /* merge  per-dir    config structures */
+  waklog_create_server_config,        /* create per-server config structures */
+  waklog_merge_dir_config,            /* merge  per-server config structures */
+  waklog_cmds,                        /* table of config file commands       */
+  NULL,                               /* [#8] MIME-typed-dispatched handlers */
+  waklog_phase1,                      /* [#1] URI to filename translation    */
+  NULL,                               /* [#4] validate user id from request  */
+  NULL,                               /* [#5] check if the user is ok _here_ */
+  waklog_phase3,                      /* [#3] check access by host address   */
+  waklog_phase6,                      /* [#6] determine MIME type            */
+  waklog_phase7,                      /* [#7] pre-run fixups                 */
+  waklog_phase9,                      /* [#9] log a transaction              */
+  NULL,                               /* [#2] header parser                  */
+  waklog_child_init,                  /* child_init                          */
+  waklog_child_exit,                  /* child_exit                          */
+  waklog_phase0                       /* [#0] post read-request              */
 #ifdef EAPI
-    , NULL,                               /* EAPI: add_module                    */
-  NULL,                                     /* EAPI: remove_module                 */
-  NULL,                                     /* EAPI: rewrite_command               */
-  waklog_new_connection         /* EAPI: new_connection                */
+    , NULL,                           /* EAPI: add_module                    */
+  NULL,                               /* EAPI: remove_module                 */
+  NULL,                               /* EAPI: rewrite_command               */
+  waklog_new_connection               /* EAPI: new_connection                */
 #endif
 };
 #else
