@@ -247,25 +247,32 @@ set_auth ( server_rec *s, request_rec *r, int self, char *principal, char *keyta
   int indentical;
   int cell_in_principal;
   int attempt;
+  int use_client_credentials = 0;
   
   char k5user[MAXNAMELEN];
   char *k5secret;
+  char *k5path = NULL;
   
+  k5path = !r ? NULL : MK_TABLE_GET( r->subprocess_env, "KRB5CCNAME" );
+
   memset((char *) &increds, 0, sizeof(increds));
-  
   /* init some stuff if it ain't already */
   
   if ( ! child.kcontext ) {
     kerror = krb5_init_context(&child.kcontext);
   }
   
-  if ( ( ! child.ccache ) && ( kerror = krb5_cc_resolve(child.kcontext, "MEMORY:tmpcache", &child.ccache) ) ) {
-    log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: can't initialize in-memory credentials cache %d", kerror );
+  if (!k5path || !*k5path) {
+    k5path = "MEMORY:tmpcache";
+  }
+  if ( ( ! child.ccache ) && ( kerror = krb5_cc_resolve(child.kcontext, k5path, &child.ccache) ) ) {
+    log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: can't initialize credentials cache %s err=%d",
+              k5path, kerror );
   }
   
-  
-  log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: set_auth: %d, %s, %s, %d", self, principal ? principal : "NULL", 
-    keytab ? keytab : "NULL", storeonly);
+  log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: set_auth: %d, %s, %s, %d, KRB5CC=%s",
+            self, principal ? principal : "NULL", 
+            keytab ? keytab : "NULL", storeonly, k5path ? k5path : "NULL");
   
   /* pull the server config record that we care about... */
   
@@ -289,6 +296,7 @@ set_auth ( server_rec *s, request_rec *r, int self, char *principal, char *keyta
        
        if ( ! ( r && r->connection && r->user )) {
          log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: self authentication selected, but no data available");
+         log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: r->user=%s", (r->user==NULL ? "null" : r->user==NULL));
          return -1;
        }
        
@@ -304,10 +312,14 @@ set_auth ( server_rec *s, request_rec *r, int self, char *principal, char *keyta
              
   } else
 #endif
-  if ( principal ) {
+  if (r && r->user) {
+    strncpy(k5user, r->user, sizeof(k5user));
+    keytab = NULL;
+  } else if ( principal ) {
     strncpy( k5user, principal, sizeof(k5user));
   }
   
+  log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: set_auth: k5user=%s", k5user ? k5user : "NULL");
   mytime = time(0);
   
   /* see if we should just go ahead and ignore this call, since we already should be set to these
@@ -376,9 +388,8 @@ set_auth ( server_rec *s, request_rec *r, int self, char *principal, char *keyta
     }
   
   }
-  
+
   /* if 'usecached' isn't set, we've got to get our tokens from somewhere... */
-  
   if (( ! usecached ) && ( k5user )) {
 
     /* clear out the creds structure */
@@ -438,27 +449,23 @@ set_auth ( server_rec *s, request_rec *r, int self, char *principal, char *keyta
       memset(k5secret, 0, sizeof(k5secret));      
       
     } else {
-      
-      /* degenerate case -- we don't have enough information to do anything */
-      
-      log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: no keytab, no self?");
-      kerror = -1;
-      goto cleanup;
-      
+      log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: no keytab, no self; assuming mod_auth_kerb or similar");
+      use_client_credentials = 1;
     } 
     
       /* initialize the credentials cache and store the stuff we just got */
+    if (!use_client_credentials) {
+      if ( kerror = krb5_cc_initialize (child.kcontext, child.ccache, kprinc)) {
+        log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: init credentials cache %s", 
+                  error_message(kerror));
+        goto cleanup;
+      }
       
-    if ( kerror = krb5_cc_initialize (child.kcontext, child.ccache, kprinc)) {
-      log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: init credentials cache %s", 
-      error_message(kerror));
-      goto cleanup;
-    }
-  
-    if ( kerror = krb5_cc_store_cred(child.kcontext, child.ccache, &v5creds) ) {
-       log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: cannot store credentials %s", 
-       error_message(kerror));
-       goto cleanup;
+      if ( kerror = krb5_cc_store_cred(child.kcontext, child.ccache, &v5creds) ) {
+        log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: cannot store credentials %s", 
+                  error_message(kerror));
+        goto cleanup;
+      }
     }
     
     krb5_free_cred_contents(child.kcontext, &v5creds);
@@ -490,6 +497,13 @@ set_auth ( server_rec *s, request_rec *r, int self, char *principal, char *keyta
         log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: krb5_parse name %s", error_message(kerror));
         goto cleanup;
       }
+
+      if (use_client_credentials) {
+        if (( kerror = krb5_cc_resolve( child.kcontext, k5path, &child.ccache)) != 0 ) {
+          log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: krb5_cc_resolve %s", error_message(kerror));          
+          goto cleanup;
+        }
+      } 
       
       if ((kerror = krb5_cc_get_principal(child.kcontext, child.ccache, &increds.client))) {
         log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: krb5_cc_get_princ %s", error_message(kerror));
