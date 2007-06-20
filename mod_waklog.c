@@ -787,7 +787,7 @@ static void *waklog_merge_server_config(MK_POOL *p, void *parent_conf, void *new
 
   merged->usertokens = nconf->usertokens == WAKLOG_UNSET ? pconf->usertokens : nconf->usertokens;
 
-  merged->disable_token_cache = nconf->disable_token_cache == WAKLOG_UNSET ? pconf->udisable_token_cache : nconf->disable_token_cache;
+  merged->disable_token_cache = nconf->disable_token_cache == WAKLOG_UNSET ? pconf->disable_token_cache : nconf->disable_token_cache;
 
   merged->keytab = nconf->keytab ==  WAKLOG_UNSET ? ap_pstrdup(p, pconf->keytab) : 
     ( nconf->keytab == WAKLOG_UNSET ? WAKLOG_UNSET : ap_pstrdup(p, pconf->keytab) );

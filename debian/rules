@@ -8,44 +8,36 @@ else
 	CFLAGS += -O2
 endif
 
-build-apache13:
+default:binary
+
+apache13:
 	dh_testdir
 	chmod +x regen.sh
 	./regen.sh
-	make clean
 	./configure \
 	  --with-afs-libs=/usr/lib/afs \
 	  --with-afs-headers=/usr/include/afs \
 	  --with-apxs=/usr/bin/apxs
-	$(MAKE)
-
-build-apache20:
-	dh_testdir
-	chmod +x regen.sh
-	./regen.sh
 	make clean
-	./configure \
-	  --with-afs-libs=/usr/lib/afs \
-	  --with-afs-headers=/usr/include/afs \
-	  --with-apache-headers=/usr/include/apache2 \
-	  --with-apxs=/usr/bin/apxs2
 	$(MAKE)
-	mv .libs/mod_waklog.so .; true
-
-apache13: build-apache13
-	dh_testdir
-	dh_testroot
-	dh_clean -k  --exclude ./_darcs/current/Makefile.orig --exclude ./Makefile.orig
 	dh_installdirs
 	mkdir -p debian/libapache-mod-waklog/usr/lib/apache/1.3/
 	mkdir -p debian/libapache-mod-waklog/etc/apache/conf.d/
 	cp mod_waklog.so debian/libapache-mod-waklog/usr/lib/apache/1.3/
 	cp debian/waklog.load debian/libapache-mod-waklog/etc/apache/conf.d/waklog.conf
 
-apache20: build-apache20
+apache20:
 	dh_testdir
-	dh_testroot
-	dh_clean -k  --exclude ./_darcs/current/Makefile.orig --exclude ./Makefile.orig
+	chmod +x regen.sh
+	./regen.sh
+	./configure \
+	  --with-afs-libs=/usr/lib/afs \
+	  --with-afs-headers=/usr/include/afs \
+	  --with-apache-headers=/usr/include/apache2 \
+	  --with-apxs=/usr/bin/apxs2
+	make clean
+	$(MAKE)
+	mv .libs/mod_waklog.so .; true
 	dh_installdirs
 	mkdir -p debian/libapache2-mod-waklog/usr/lib/apache2/modules/
 	mkdir -p debian/libapache2-mod-waklog/etc/apache2/mods-available
