@@ -106,6 +106,7 @@ typedef struct
   char *default_principal;
   char *default_keytab;
   char *afs_cell;
+  char *afs_cell_realm;
   char *path;
   MK_POOL *p;
 }
@@ -311,11 +312,12 @@ set_auth ( server_rec *s, request_rec *r, int self, char *principal, char *keyta
        /* we'll pick this up later after we've checked the cache and current state */
              
   } else
-#endif
   if (r && r->user) {
     strncpy(k5user, r->user, sizeof(k5user));
     keytab = NULL;
-  } else if ( principal ) {
+  } else
+#endif
+ if ( principal ) {
     strncpy( k5user, principal, sizeof(k5user));
   }
   
@@ -479,16 +481,19 @@ set_auth ( server_rec *s, request_rec *r, int self, char *principal, char *keyta
   
     /* now, to the 'aklog' portion of our program. */
     
-    strncpy( buf, "afs", sizeof(buf) - 1 );
-
     /** we make two attempts here, one for afs@REALM and one for afs/cell@REALM */
     for(attempt = 0; attempt <= 1; attempt++) {
+      strncpy( buf, "afs", sizeof(buf) - 1 );
       cell_in_principal = (cfg->cell_in_principal + attempt) % 2;
 
       log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: cell_in_principal=%d", cell_in_principal );
       if (cell_in_principal) {
-        strncat(buf, "/", sizeof(buf) - strlen(buf) - 1);
+        strncat(buf, "/",           sizeof(buf) - strlen(buf) - 1);
         strncat(buf, cfg->afs_cell, sizeof(buf) - strlen(buf) - 1);
+      }
+      if (cfg->afs_cell_realm != WAKLOG_UNSET) {
+        strncat(buf, "@",                 sizeof(buf) - strlen(buf) - 1);
+        strncat(buf, cfg->afs_cell_realm, sizeof(buf) - strlen(buf) - 1);
       }
       
       log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: using AFS principal: %s", buf);
@@ -729,6 +734,7 @@ waklog_create_server_config (MK_POOL * p, server_rec * s)
   cfg->default_principal = WAKLOG_UNSET;
   cfg->default_keytab = WAKLOG_UNSET;
   cfg->afs_cell = WAKLOG_UNSET;
+  cfg->afs_cell_realm = WAKLOG_UNSET;
   cfg->forked = 0;
   cfg->configured = 0;
 
@@ -757,6 +763,7 @@ waklog_create_dir_config (MK_POOL * p, char *dir)
   cfg->default_principal = WAKLOG_UNSET;
   cfg->default_keytab = WAKLOG_UNSET;
   cfg->afs_cell = WAKLOG_UNSET;
+  cfg->afs_cell_realm = WAKLOG_UNSET;
   cfg->forked = 0;
   cfg->configured = 0;
 
@@ -786,6 +793,8 @@ static void *waklog_merge_dir_config(MK_POOL *p, void *parent_conf, void *newloc
   merged->default_principal = child->default_principal != WAKLOG_UNSET ? child->default_principal : parent->default_principal;
   
   merged->afs_cell = child->afs_cell != WAKLOG_UNSET ? child->afs_cell : parent->afs_cell;
+
+  merged->afs_cell_realm = child->afs_cell_realm != WAKLOG_UNSET ? child->afs_cell_realm : parent->afs_cell_realm;
   
   return (void *) merged;
   
@@ -811,6 +820,9 @@ static void *waklog_merge_server_config(MK_POOL *p, void *parent_conf, void *new
       
   merged->afs_cell = nconf->afs_cell  == WAKLOG_UNSET ? ap_pstrdup(p, pconf->afs_cell) : 
       ( nconf->afs_cell == WAKLOG_UNSET ? WAKLOG_UNSET : ap_pstrdup(p, pconf->afs_cell) );    
+  
+  merged->afs_cell_realm = nconf->afs_cell_realm  == WAKLOG_UNSET ? ap_pstrdup(p, pconf->afs_cell_realm) : 
+      ( nconf->afs_cell_realm == WAKLOG_UNSET ? WAKLOG_UNSET : ap_pstrdup(p, pconf->afs_cell_realm) );    
   
   merged->default_keytab = nconf->default_keytab ==  WAKLOG_UNSET ? ap_pstrdup(p, pconf->default_keytab) : 
         ( nconf->default_keytab == WAKLOG_UNSET ? WAKLOG_UNSET : ap_pstrdup(p, pconf->default_keytab) );
@@ -902,6 +914,24 @@ set_waklog_afs_cell (cmd_parms * params, void *mconfig, char *file)
     waklog_mconfig->cell_in_principal = waklog_srvconfig->cell_in_principal;
     waklog_mconfig->afs_cell = ap_pstrdup (params->pool, file);
     waklog_mconfig->configured = 1;
+  }
+  return (NULL);
+}
+
+static const char *
+set_waklog_afs_cell_realm (cmd_parms * params, void *mconfig, char *file)
+{
+  waklog_config *waklog_mconfig = ( waklog_config * ) mconfig;
+  waklog_config *waklog_srvconfig =
+    ( waklog_config * ) ap_get_module_config(params->server->module_config, &waklog_module );
+
+  log_error (APLOG_MARK, APLOG_INFO, 0, params->server,
+             "mod_waklog: will use afs_cell_realm: %s", file);
+
+  waklog_srvconfig->afs_cell_realm = ap_pstrdup (params->pool, file);
+
+  if (waklog_mconfig != NULL) {
+    waklog_mconfig->afs_cell_realm = ap_pstrdup (params->pool, file);
   }
   return (NULL);
 }
@@ -1057,6 +1087,9 @@ command_rec waklog_cmds[] = {
   
   command ("WaklogAFSCell", set_waklog_afs_cell, 0, TAKE1,
            "Use the supplied AFS cell (required)"),
+
+  command ("WaklogAFSCellRealm", set_waklog_afs_cell_realm, 0, TAKE1,
+           "Assume that the AFS cell belongs to the specified Kerberos realm (optional)"),
 
   command ("WaklogEnabled", set_waklog_enabled, 0, FLAG,
            "enable waklog on a server, location, or directory basis"),
