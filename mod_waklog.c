@@ -312,7 +312,7 @@ set_auth ( server_rec *s, request_rec *r, int self, char *principal, char *keyta
        /* we'll pick this up later after we've checked the cache and current state */
              
   } else
-  if (r && r->user) {
+  if (r && r->user && !principal) {
     strncpy(k5user, r->user, sizeof(k5user));
     keytab = NULL;
   } else
