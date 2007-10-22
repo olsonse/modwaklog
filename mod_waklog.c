@@ -271,9 +271,17 @@ set_auth ( server_rec *s, request_rec *r, int self, char *principal, char *keyta
               k5path, kerror );
   }
   
-  log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: set_auth: %d, %s, %s, %d, KRB5CC=%s",
+  log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: set_auth: %d, %s, %s, %d, KRB5CC=%s user=%s",
             self, principal ? principal : "NULL", 
-            keytab ? keytab : "NULL", storeonly, k5path ? k5path : "NULL");
+            keytab ? keytab : "NULL",
+            storeonly,
+            k5path ? k5path : "NULL",
+#ifdef APACHE2
+            (r && r->user) ? r->user : "NULL"
+#else
+            "NULL"
+#endif
+            );
   
   /* pull the server config record that we care about... */
   
@@ -1562,6 +1570,9 @@ waklog_phase7 (request_rec * r)
   } else if ( cfg->default_principal ) {
     log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "mod_waklog: phase7 using default user %s", cfg->default_principal);
     rc = set_auth( r->server, r, 0, cfg->default_principal, cfg->default_keytab, 0);
+  } else {
+    log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "mod_waklog: phase7 using no default principal");
+    set_auth(r->server, r, 0, NULL, NULL, 0);
   }
   
   if ( rc ) {
