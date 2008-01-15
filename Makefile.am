@@ -2,7 +2,7 @@ all: mod_waklog.so
 
 APXS = @APXS@
 INCLUDES = -I@KRB5_INC@ -I@AFS_INC@ -I@APACHE_INC@
-LIB = -L@KRB5_LIBS@ -L@AFS_LIBS@ -L@APACHE_LIBS@ -lkrb5 -lk5crypto  \
+LIB = -L@AFS_LIBS@ -L@KRB5_LIBS@ -L@APACHE_LIBS@ -lkrb5 -lk5crypto  \
        -lprot -lauth -lresolv -lubik -lrxkad -lsys -lrx -llwp -ldes \
        -lcom_err -lafsutil
 
