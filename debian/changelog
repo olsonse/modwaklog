@@ -1,3 +1,11 @@
+libapache-mod-waklog (0.994) unstable; urgency=low
+
+  * apply patch to include libopenafs-dev as build dependency and
+  libapache2-webauth as alternative to libapache2-mod-auth-kerb,
+  from Jon Robertson <jonrober@stanford.edu>
+
+ -- megacz <adam@megacz.com>  Sun, 26 Oct 2008 14:16:56 -0800
+
 libapache-mod-waklog (0.993) unstable; urgency=low
 
   * apply modwaklog-security.patch from Simon Wilkinson <simon@sxw.org.uk>
