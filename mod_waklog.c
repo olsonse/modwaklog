@@ -934,7 +934,9 @@ set_waklog_afs_cell (cmd_parms * params, void *mconfig, char *file)
   log_error (APLOG_MARK, APLOG_INFO, 0, params->server,
              "mod_waklog: will use afs_cell: %s", file);
 
-  waklog_srvconfig->cell_in_principal = 0;
+  // Prefer afs/cell@REALM over afs@REALM, just like the OpenAFS tools
+  waklog_srvconfig->cell_in_principal = 1;
+
   waklog_srvconfig->afs_cell = ap_pstrdup (params->pool, file);
   waklog_srvconfig->configured = 1;
 
