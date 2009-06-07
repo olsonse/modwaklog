@@ -81,9 +81,7 @@ const char *userdata_key = "waklog_init";
 #define TKT_LIFE  ( 12 * 60 * 60 )
 #define SLEEP_TIME      ( TKT_LIFE - 5*60 )
 
-#define WAKLOG_ON 1
-#define WAKLOG_OFF 2
-#define WAKLOG_UNSET 0
+#define WAKLOG_UNSET -1
 
 #ifdef WAKLOG_DEBUG
 #undef APLOG_DEBUG
@@ -520,7 +518,7 @@ set_auth ( server_rec *s, request_rec *r, int self, char *principal, char *keyta
         strncat(buf, "/",           sizeof(buf) - strlen(buf) - 1);
         strncat(buf, cfg->afs_cell, sizeof(buf) - strlen(buf) - 1);
       }
-      if (cfg->afs_cell_realm != WAKLOG_UNSET) {
+      if (cfg->afs_cell_realm != NULL) {
         strncat(buf, "@",                 sizeof(buf) - strlen(buf) - 1);
         strncat(buf, cfg->afs_cell_realm, sizeof(buf) - strlen(buf) - 1);
       }
@@ -757,12 +755,12 @@ waklog_create_server_config (MK_POOL * p, server_rec * s)
   cfg->protect = WAKLOG_UNSET;
   cfg->usertokens = WAKLOG_UNSET;
   cfg->disable_token_cache = WAKLOG_UNSET;
-  cfg->keytab = WAKLOG_UNSET;
-  cfg->principal = WAKLOG_UNSET;
-  cfg->default_principal = WAKLOG_UNSET;
-  cfg->default_keytab = WAKLOG_UNSET;
-  cfg->afs_cell = WAKLOG_UNSET;
-  cfg->afs_cell_realm = WAKLOG_UNSET;
+  cfg->keytab = NULL;
+  cfg->principal = NULL;
+  cfg->default_principal = NULL;
+  cfg->default_keytab = NULL;
+  cfg->afs_cell = NULL;
+  cfg->afs_cell_realm = NULL;
   cfg->forked = 0;
   cfg->configured = 0;
 
@@ -786,12 +784,12 @@ waklog_create_dir_config (MK_POOL * p, char *dir)
   cfg->protect = WAKLOG_UNSET;
   cfg->usertokens = WAKLOG_UNSET;
   cfg->disable_token_cache = WAKLOG_UNSET;
-  cfg->keytab = WAKLOG_UNSET;
-  cfg->principal = WAKLOG_UNSET;
-  cfg->default_principal = WAKLOG_UNSET;
-  cfg->default_keytab = WAKLOG_UNSET;
-  cfg->afs_cell = WAKLOG_UNSET;
-  cfg->afs_cell_realm = WAKLOG_UNSET;
+  cfg->keytab = NULL;
+  cfg->principal = NULL;
+  cfg->default_principal = NULL;
+  cfg->default_keytab = NULL;
+  cfg->afs_cell = NULL;
+  cfg->afs_cell_realm = NULL;
   cfg->forked = 0;
   cfg->configured = 0;
 
@@ -806,23 +804,23 @@ static void *waklog_merge_dir_config(MK_POOL *p, void *parent_conf, void *newloc
   
   merged->protect = child->protect != WAKLOG_UNSET ? child->protect : parent->protect;
   
-  merged->path = child->path != WAKLOG_UNSET ? child->path : parent->path;
+  merged->path = child->path != NULL ? child->path : parent->path;
   
   merged->usertokens = child->usertokens != WAKLOG_UNSET ? child->usertokens : parent->usertokens;
 
   merged->disable_token_cache = child->disable_token_cache != WAKLOG_UNSET ? child->disable_token_cache : parent->disable_token_cache;
   
-  merged->principal = child->principal != WAKLOG_UNSET ? child->principal : parent->principal;
+  merged->principal = child->principal != NULL ? child->principal : parent->principal;
   
-  merged->keytab = child->keytab != WAKLOG_UNSET ? child->keytab : parent->keytab;
+  merged->keytab = child->keytab != NULL ? child->keytab : parent->keytab;
   
-  merged->default_keytab = child->default_keytab != WAKLOG_UNSET ? child->default_keytab : parent->default_keytab;
+  merged->default_keytab = child->default_keytab != NULL ? child->default_keytab : parent->default_keytab;
   
-  merged->default_principal = child->default_principal != WAKLOG_UNSET ? child->default_principal : parent->default_principal;
+  merged->default_principal = child->default_principal != NULL ? child->default_principal : parent->default_principal;
   
-  merged->afs_cell = child->afs_cell != WAKLOG_UNSET ? child->afs_cell : parent->afs_cell;
+  merged->afs_cell = child->afs_cell != NULL ? child->afs_cell : parent->afs_cell;
 
-  merged->afs_cell_realm = child->afs_cell_realm != WAKLOG_UNSET ? child->afs_cell_realm : parent->afs_cell_realm;
+  merged->afs_cell_realm = child->afs_cell_realm != NULL ? child->afs_cell_realm : parent->afs_cell_realm;
   
   return (void *) merged;
   
@@ -840,23 +838,23 @@ static void *waklog_merge_server_config(MK_POOL *p, void *parent_conf, void *new
 
   merged->disable_token_cache = nconf->disable_token_cache == WAKLOG_UNSET ? pconf->disable_token_cache : nconf->disable_token_cache;
 
-  merged->keytab = nconf->keytab ==  WAKLOG_UNSET ? ap_pstrdup(p, pconf->keytab) : 
-    ( nconf->keytab == WAKLOG_UNSET ? WAKLOG_UNSET : ap_pstrdup(p, pconf->keytab) );
+  merged->keytab = nconf->keytab == NULL ? ap_pstrdup(p, pconf->keytab) : 
+    ( nconf->keytab == NULL ? NULL : ap_pstrdup(p, nconf->keytab) );
     
-  merged->principal = nconf->principal == WAKLOG_UNSET ? ap_pstrdup(p, pconf->principal) : 
-      ( nconf->principal == WAKLOG_UNSET ? WAKLOG_UNSET : ap_pstrdup(p, pconf->principal) );
+  merged->principal = nconf->principal == NULL ? ap_pstrdup(p, pconf->principal) : 
+      ( nconf->principal == NULL ? NULL : ap_pstrdup(p, nconf->principal) );
       
-  merged->afs_cell = nconf->afs_cell  == WAKLOG_UNSET ? ap_pstrdup(p, pconf->afs_cell) : 
-      ( nconf->afs_cell == WAKLOG_UNSET ? WAKLOG_UNSET : ap_pstrdup(p, pconf->afs_cell) );    
+  merged->afs_cell = nconf->afs_cell == NULL ? ap_pstrdup(p, pconf->afs_cell) : 
+      ( nconf->afs_cell == NULL ? NULL : ap_pstrdup(p, nconf->afs_cell) );    
   
-  merged->afs_cell_realm = nconf->afs_cell_realm  == WAKLOG_UNSET ? ap_pstrdup(p, pconf->afs_cell_realm) : 
-      ( nconf->afs_cell_realm == WAKLOG_UNSET ? WAKLOG_UNSET : ap_pstrdup(p, pconf->afs_cell_realm) );    
+  merged->afs_cell_realm = nconf->afs_cell_realm  == NULL ? ap_pstrdup(p, pconf->afs_cell_realm) : 
+      ( nconf->afs_cell_realm == NULL ? NULL : ap_pstrdup(p, nconf->afs_cell_realm) );    
   
-  merged->default_keytab = nconf->default_keytab ==  WAKLOG_UNSET ? ap_pstrdup(p, pconf->default_keytab) : 
-        ( nconf->default_keytab == WAKLOG_UNSET ? WAKLOG_UNSET : ap_pstrdup(p, pconf->default_keytab) );
+  merged->default_keytab = nconf->default_keytab == NULL ? ap_pstrdup(p, pconf->default_keytab) : 
+        ( nconf->default_keytab == NULL ? NULL : ap_pstrdup(p, nconf->default_keytab) );
 
-  merged->default_principal = nconf->default_principal == WAKLOG_UNSET ? ap_pstrdup(p, pconf->default_principal) : 
-        ( nconf->default_principal == WAKLOG_UNSET ? WAKLOG_UNSET : ap_pstrdup(p, pconf->default_principal) );
+  merged->default_principal = nconf->default_principal == NULL ? ap_pstrdup(p, pconf->default_principal) : 
+        ( nconf->default_principal == NULL ? NULL : ap_pstrdup(p, nconf->default_principal) );
   
   
   return (void *) merged;
@@ -1095,7 +1093,7 @@ waklog_child_init (server_rec * s, MK_POOL * p)
 
   getModConfig (cfg, s);
 
-  if ( cfg->default_principal != WAKLOG_UNSET ) {
+  if ( cfg->default_principal != NULL ) {
     log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: child_init setting default user %s, %s", cfg->default_principal, cfg->default_keytab);
     set_auth( s, NULL, 0, cfg->default_principal, cfg->default_keytab, 0);
   }
