@@ -1333,7 +1333,7 @@ waklog_init_handler (apr_pool_t * p, apr_pool_t * plog,
           if (err) {
             log_error( APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: unable to delete %s due to %d", cache_file, errno);
           } else {
-            log_error( APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: shared cache deleted");
+            log_error( APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: shared cache unlinked (will be deleted when Apache quits)");
           }
         } else {
            log_error( APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: mmap failed %d", errno );
