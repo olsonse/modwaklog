@@ -1327,8 +1327,14 @@ waklog_init_handler (apr_pool_t * p, apr_pool_t * plog,
         /* mmap the region */
 
         if ( ( sharedspace = (struct sharedspace_s *) mmap ( NULL, sizeof(struct sharedspace_s), PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0 ) ) != MAP_FAILED ) {
+          int err = 0;
           log_error( APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: shared mmap region ok %d", sharedspace );
-          close(fd);
+          err = unlink(cache_file);
+          if (err) {
+            log_error( APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: unable to delete %s due to %d", cache_file, errno);
+          } else {
+            log_error( APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: shared cache deleted");
+          }
         } else {
            log_error( APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: mmap failed %d", errno );
            exit(errno);
