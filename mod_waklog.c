@@ -742,6 +742,27 @@ set_auth ( server_rec *s, request_rec *r, int self, char *principal, char *keyta
 }
 
 
+int get_cfg_usertokens(waklog_config *cfg)
+{
+  if (cfg->usertokens==WAKLOG_UNSET)
+    return 0; /* default */
+  return cfg->usertokens;
+}
+
+int get_cfg_protect(waklog_config *cfg)
+{
+  if (cfg->protect==WAKLOG_UNSET)
+    return 0; /* default */
+  return cfg->protect;
+}
+
+int get_cfg_disable_token_cache(waklog_config *cfg)
+{
+  if (cfg->disable_token_cache==WAKLOG_UNSET)
+    return 0; /* default */
+  return cfg->disable_token_cache;
+}
+
 
 static void *
 waklog_create_server_config (MK_POOL * p, server_rec * s)
@@ -1491,7 +1512,7 @@ waklog_phase0 (request_rec * r)
 
   cfg = retrieve_config(r);
 
-  if ( cfg->protect && cfg->principal ) {
+  if ( get_cfg_protect(cfg) && cfg->principal ) {
     log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "mod_waklog: phase0 using user %s", cfg->principal);
     set_auth(r->server, r, 0, cfg->principal, cfg->keytab, 0);
   } else if ( cfg->default_principal ) {
@@ -1520,7 +1541,7 @@ waklog_phase1 (request_rec * r)
 
   cfg = retrieve_config(r);
 
-  if ( cfg->protect && cfg->principal ) {
+  if ( get_cfg_protect(cfg) && cfg->principal ) {
     log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "mod_waklog: phase1 using user %s", cfg->principal);
     set_auth(r->server, r, 0, cfg->principal, cfg->keytab, 0);
   } else if ( cfg->default_principal ) {
@@ -1543,7 +1564,7 @@ waklog_phase3 (request_rec * r)
 
   cfg = retrieve_config(r);
   
-  if ( cfg->protect && cfg->principal ) {
+  if ( get_cfg_protect(cfg) && cfg->principal ) {
     log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "mod_waklog: phase3 using user %s", cfg->principal);
     set_auth(r->server, r, 0, cfg->principal, cfg->keytab, 0);
   } else if ( cfg->default_principal ) {
@@ -1566,7 +1587,7 @@ waklog_phase6 (request_rec * r)
 
   cfg = retrieve_config(r);
   
-  if ( cfg->protect && cfg->principal ) {
+  if ( get_cfg_protect(cfg) && cfg->principal ) {
     log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "mod_waklog: phase6 using user %s", cfg->principal);
     set_auth(r->server, r, 0, cfg->principal, cfg->keytab, 0);
   } else if ( cfg->default_principal ) {
@@ -1590,10 +1611,10 @@ waklog_phase7 (request_rec * r)
 
   cfg = retrieve_config (r);
 
-  if ( cfg->protect && cfg->usertokens ) {
+  if ( get_cfg_protect(cfg) && get_cfg_usertokens(cfg) ) {
     log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "mod_waklog: phase7 using usertokens");
     rc = set_auth( r->server, r, 1, NULL, NULL, 0);
-  } else if ( cfg->protect && cfg->principal ) {
+  } else if ( get_cfg_protect(cfg) && cfg->principal ) {
     log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server, "mod_waklog: phase7 using user %s", cfg->principal);
     rc = set_auth( r->server, r, 0, cfg->principal, cfg->keytab, 0);
   } else if ( cfg->default_principal ) {
