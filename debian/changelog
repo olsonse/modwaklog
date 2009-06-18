@@ -1,3 +1,9 @@
+libapache-mod-waklog (1.0) unstable; urgency=low
+
+  * The 1.0 release
+
+ -- Adam Megacz <megacz@hcoop.net>  Thu, 18 Jun 2009 13:48:42 -0700
+
 libapache-mod-waklog (0.994) unstable; urgency=low
 
   * apply patch to include libopenafs-dev as build dependency and
