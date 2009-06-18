@@ -1,3 +1,10 @@
+libapache-mod-waklog (1.01) unstable; urgency=low
+
+  * Applied patch Simon Wilkinson <simon@sxw.org.uk>, fixed a bug,
+    modified mod_waklog to not leave droppings in /tmp
+
+ -- Adam Megacz <megacz@hcoop.net>  Thu, 18 Jun 2009 13:49:59 -0700
+
 libapache-mod-waklog (1.0) unstable; urgency=low
 
   * The 1.0 release
