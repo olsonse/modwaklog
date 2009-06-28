@@ -8,12 +8,11 @@ Standards-Version: 3.6.1
 
 Package: libapache-mod-waklog
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, apache-common, krb5-config, libapache-mod-auth-kerb
+Depends: ${shlibs:Depends}, ${misc:Depends}, apache-common, krb5-config
 Description:  AFS Authentication for Apache
 
 Package: libapache2-mod-waklog
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, apache2-mpm-prefork, krb5-config, 
- libapache2-mod-auth-kerb | libapache2-webauth
+Depends: ${shlibs:Depends}, ${misc:Depends}, apache2-mpm-prefork, krb5-config
 Description:  AFS Authentication for Apache2
 
