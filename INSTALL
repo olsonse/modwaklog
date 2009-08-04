@@ -5,7 +5,7 @@ Type:
    ./regen.sh
    ./configure --with-afs-libs=/usr/lib/afs --with-afs-headers=/usr/include/afs
    make
-   cp mod_waklog.so <wherever>
+   cp ./.libs/mod_waklog.so <wherever>
 
 Debian:
 

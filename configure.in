@@ -15,6 +15,12 @@ AC_ARG_WITH([afs-headers],
             [AFS_INC=/usr/include/afs])
 AC_SUBST(AFS_INC)
 
+AC_ARG_WITH([apr-headers],
+            [AC_HELP_STRING([--with-apr-headers],[path to apr headers])],
+            [APR_INC=$withval],
+            [APR_INC=/usr/include/apr-1])
+AC_SUBST(APR_INC)
+
 AC_ARG_WITH([krb5-libs],
             [AC_HELP_STRING([--with-krb5-libs],[path to krb5 libraries])],
             [KRB5_LIBS=$withval],
