@@ -424,7 +424,7 @@ set_auth ( server_rec *s, request_rec *r, int self, char *principal, char *keyta
     /* create a principal out of our k5user string */
     
     if ( ( kerror = krb5_parse_name (child.kcontext, k5user, &kprinc ) ) ) {
-      log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: krb5_parse_name %s", (char *) error_message(kerror) );
+      log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: krb5_parse_name %s", (char *) afs_error_message(kerror) );
       goto cleanup;
     }
     
@@ -445,14 +445,14 @@ set_auth ( server_rec *s, request_rec *r, int self, char *principal, char *keyta
     
         if ( ( kerror = krb5_kt_resolve(child.kcontext, keytab, &krb5kt ) ) ) {
           log_error( APLOG_MARK, APLOG_ERR, 0, s,
-            "mod_waklog: krb5_kt_resolve %s", error_message(kerror) );
+            "mod_waklog: krb5_kt_resolve %s", afs_error_message(kerror) );
           goto cleanup;
         }
     
         if ((kerror = krb5_get_init_creds_keytab (child.kcontext, &v5creds,
               kprinc, krb5kt, 0, NULL, &kopts ) ) ) {
                 log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: krb5_get_init_creds_keytab %s",
-                  error_message(kerror) );
+                  afs_error_message(kerror) );
                 goto cleanup;
         }
       } else if (k5secret) {
@@ -462,7 +462,7 @@ set_auth ( server_rec *s, request_rec *r, int self, char *principal, char *keyta
         if ((kerror = krb5_get_init_creds_password ( child.kcontext, &v5creds,
               kprinc, k5secret, NULL, NULL, 0, NULL, &kopts ) ) ) {
                 log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: krb5_get_init_creds_password %s",
-                  error_message(kerror) );
+                  afs_error_message(kerror) );
                   /* nuke the password so it doesn't end up in core files */
                   memset(k5secret, 0, strlen(k5secret));
                 goto cleanup;
@@ -474,20 +474,20 @@ set_auth ( server_rec *s, request_rec *r, int self, char *principal, char *keyta
       /* initialize the credentials cache and store the stuff we just got */
       if ( ( kerror = krb5_cc_initialize (child.kcontext, child.ccache, kprinc) ) ) {
         log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: init credentials cache %s", 
-                  error_message(kerror));
+                  afs_error_message(kerror));
         goto cleanup;
       }
       
       if ( ( kerror = krb5_cc_store_cred(child.kcontext, child.ccache, &v5creds) ) ) {
         log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: cannot store credentials %s", 
-                  error_message(kerror));
+                  afs_error_message(kerror));
         goto cleanup;
       }
     
       krb5_free_cred_contents(child.kcontext, &v5creds);
  
       if ( kerror ) {
-        log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: store cred %s", error_message(kerror));
+        log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: store cred %s", afs_error_message(kerror));
         goto cleanup;
       }
       
@@ -528,7 +528,7 @@ set_auth ( server_rec *s, request_rec *r, int self, char *principal, char *keyta
       log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: using AFS principal: %s", buf);
       
       if ((kerror = krb5_parse_name (child.kcontext, buf, &increds.server))) {
-        log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: krb5_parse name %s", error_message(kerror));
+        log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: krb5_parse name %s", afs_error_message(kerror));
         goto cleanup;
       }
 
@@ -537,7 +537,7 @@ set_auth ( server_rec *s, request_rec *r, int self, char *principal, char *keyta
       }
 
       if ((kerror = krb5_cc_get_principal(child.kcontext, clientccache, &increds.client))) {
-        log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: krb5_cc_get_princ %s %p", error_message(kerror), clientccache);
+        log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: krb5_cc_get_princ %s %p", afs_error_message(kerror), clientccache);
         goto cleanup;
       }
       
@@ -545,13 +545,11 @@ set_auth ( server_rec *s, request_rec *r, int self, char *principal, char *keyta
       
       increds.times.endtime = 0;
       
-      increds.keyblock.enctype = ENCTYPE_DES_CBC_CRC;
-      
       if ( ( kerror = krb5_get_credentials (child.kcontext, 0, clientccache, &increds, &v5credsp ) ) ) {
         /* only complain once we've tried both afs@REALM and afs/cell@REALM */
         if (attempt>=1) {
           log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: krb5_get_credentials: %s",
-                    error_message(kerror));
+                    afs_error_message(kerror));
           goto cleanup;
         } else {
           continue;
@@ -574,7 +572,12 @@ set_auth ( server_rec *s, request_rec *r, int self, char *principal, char *keyta
     token.startTime = v5credsp->times.starttime ? v5credsp->times.starttime : v5credsp->times.authtime;
     token.endTime = v5credsp->times.endtime;
     
-    memmove( &token.sessionKey, v5credsp->keyblock.contents, v5credsp->keyblock.length);
+    if (tkt_DeriveDesKey(v5credsp->keyblock.enctype, v5credsp->keyblock.contents,
+                         v5credsp->keyblock.length, &token.sessionKey) != 0) {
+        log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: tkt_DeriveDesKey failure (enctype: %d)",
+                  v5credsp->keyblock.enctype);
+        goto cleanup;
+    }
     token.kvno = RXKAD_TKT_TYPE_KERBEROS_V5;
     token.ticketLen = v5credsp->ticket.length;
     memmove( token.ticket, v5credsp->ticket.data, token.ticketLen);
@@ -709,10 +712,10 @@ set_auth ( server_rec *s, request_rec *r, int self, char *principal, char *keyta
   
   if ((rc = ktc_SetToken(&child.server, &child.token, &child.client, 0))) {
     log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: settoken returned %s for %s -- trying again", 
-      error_message(rc), k5user);
+      afs_error_message(rc), k5user);
     if ((rc = ktc_SetToken(&child.server, &child.token, &child.client, 0))) {
       log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: settoken2 returned %s for %s", 
-        error_message(rc), k5user);
+        afs_error_message(rc), k5user);
       goto cleanup;
     }
   }
@@ -734,7 +737,7 @@ set_auth ( server_rec *s, request_rec *r, int self, char *principal, char *keyta
   if ( rc ) {
     log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: set_auth ending with %d", rc );
   } else if ( kerror ) {
-    log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: set_auth ending with krb5 error %d, %s", kerror, error_message(kerror));
+    log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: set_auth ending with krb5 error %d, %s", kerror, afs_error_message(kerror));
   } else {
     log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: set_auth ending ok");
   }
