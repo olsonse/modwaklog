@@ -11,6 +11,7 @@
 #ifdef sun
 #include <synch.h>
 #include <stropts.h>
+#include <sys/ioccom.h>
 #elif linux
 #define use_pthreads
 #include <features.h>
@@ -32,9 +33,6 @@
 /********************* APACHE1 ******************************************************************************/
 #ifndef APACHE2
 #include "ap_config.h"
-#if defined(sun)
-#include <sys/ioccom.h>
-#endif /* sun */
 #include <http_conf_globals.h>
 #define MK_POOL pool
 #define MK_TABLE_GET ap_table_get
@@ -163,17 +161,6 @@ int renewcount = 0;
 
 
 #define getModConfig(P, X) P = (waklog_config *) ap_get_module_config( (X)->module_config, &waklog_module );
-
-#include <krb5.h>
-
-#if defined(sun)
-#include <sys/ioccom.h>
-#endif /* sun */
-#include <afs/venus.h>
-#include <afs/auth.h>
-#include <afs/dirpath.h>
-#include <afs/ptuser.h>
-#include <rx/rxkad.h>
 
 
 static void
