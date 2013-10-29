@@ -45,6 +45,7 @@ module waklog_module;
 
 /********************* APACHE2 ******************************************************************************/
 #else
+#include "http_connection.h"
 #include <apr_strings.h>
 #include <apr_base64.h>
 #define ap_pcalloc apr_pcalloc
