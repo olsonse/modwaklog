@@ -332,7 +332,7 @@ set_auth ( server_rec *s, request_rec *r, int self, char *principal, char *keyta
   }
 #endif
   
-  log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: set_auth: k5user=%s", k5user ? k5user : "NULL");
+  log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: set_auth: k5user=%s", k5user);
   mytime = time(0);
   
   /* see if we should just go ahead and ignore this call, since we already should be set to these
@@ -403,7 +403,7 @@ set_auth ( server_rec *s, request_rec *r, int self, char *principal, char *keyta
   }
 
   /* if 'usecached' isn't set, we've got to get our tokens from somewhere... */
-  if (( ! usecached ) && ( k5user )) {
+  if ( ! usecached ) {
 
     /* clear out the creds structure */
     memset((void *) &v5creds, 0, sizeof(v5creds));
