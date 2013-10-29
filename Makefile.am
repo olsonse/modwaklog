@@ -3,7 +3,7 @@ all: mod_waklog.so
 APXS = @APXS@
 INCLUDES = -I@KRB5_INC@ -I@AFS_INC@ -I@APACHE_INC@ -I@APR_INC@
 LIB = -L@AFS_LIBS@ -L@KRB5_LIBS@ -L@APACHE_LIBS@ -lkrb5 -lk5crypto  \
-       -lafsauthent -lafsrpc
+       -lafsauthent -lafsrpc -lkopenafs
 
 APXSCC = `${APXS} -q CC` \
          @WAKLOG_DEBUG@ \

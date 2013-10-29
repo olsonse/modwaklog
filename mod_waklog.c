@@ -70,6 +70,7 @@ const char *userdata_key = "waklog_init";
 /**************************************************************************************************/
 
 #include <krb5.h>
+#include <kopenafs.h>
 
 #include <afs/param.h>
 
@@ -1098,7 +1099,7 @@ waklog_child_init (server_rec * s, MK_POOL * p)
   }
   
   if ( pag_for_children ) {
-    setpag ();
+    k_setpag ();
   }
 
   getModConfig (cfg, s);
