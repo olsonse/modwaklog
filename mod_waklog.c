@@ -1337,7 +1337,7 @@ waklog_init_handler (apr_pool_t * p, apr_pool_t * plog,
 #define locktype rwlock_t
 #endif
 
-      if ( sharedlock = ( locktype * ) mmap ( NULL, sizeof(locktype), PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANON, -1, 0 ) ) {
+      if ( ( sharedlock = ( locktype * ) mmap ( NULL, sizeof(locktype), PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANON, -1, 0 ) ) != NULL ) {
 #ifndef use_pthreads
         rwlock_init(sharedlock, USYNC_PROCESS, NULL );
 #else
