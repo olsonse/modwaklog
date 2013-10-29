@@ -297,7 +297,7 @@ set_auth ( server_rec *s, request_rec *r, int self, char *principal, char *keyta
 #ifdef APACHE2       
        if ( ! ( r && r->connection && r->user )) {
          log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: self authentication selected, but no data available");
-         log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: r->user=%s", (r->user==NULL ? "null" : r->user==NULL));
+         log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: r->user=%s", (r->user==NULL ? "null" : r->user));
          return -1;
        }
        
