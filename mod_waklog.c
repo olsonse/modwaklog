@@ -10,6 +10,7 @@
 
 #ifdef sun
 #include <synch.h>
+#include <stropts.h>
 #elif linux
 #define use_pthreads
 #include <features.h>
@@ -71,7 +72,6 @@ const char *userdata_key = "waklog_init";
 /**************************************************************************************************/
 
 #include <krb5.h>
-#include <stropts.h>
 
 #include <afs/param.h>
 
@@ -169,7 +169,6 @@ int renewcount = 0;
 #if defined(sun)
 #include <sys/ioccom.h>
 #endif /* sun */
-#include <stropts.h>
 #include <afs/venus.h>
 #include <afs/auth.h>
 #include <afs/dirpath.h>
