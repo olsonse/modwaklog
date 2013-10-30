@@ -1319,7 +1319,10 @@ waklog_init_handler (apr_pool_t * p, apr_pool_t * plog,
           struct sharedspace_s bob;
           log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: sizing our cache file %d to %d", fd, sizeof(struct sharedspace_s) );
           memset( &bob, 0, sizeof(struct sharedspace_s));
-          write(fd, &bob, sizeof(struct sharedspace_s));
+          if ( write(fd, &bob, sizeof(struct sharedspace_s)) != sizeof(struct sharedspace_s) ) {
+            log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: failed to write to our cache file %s (%d)", cache_file, errno );
+            exit(errno);
+          }
           log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: done sizing our cache file to %d", sizeof(struct sharedspace_s) );
         }
 
