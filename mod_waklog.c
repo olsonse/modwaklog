@@ -1170,7 +1170,15 @@ token_cleanup (void *data)
   return 0;
 }
 
+/* This function doesn't return anything but is passed to ap_bspawn_child on
+ * Apache 1 which expects it to return a pid as an int. For want of better
+ * understanding, err on the side of not changing Apache 1 code while fixing
+ * the compile warning on Apache 2. */
+#ifdef APACHE2
+static void
+#else
 static int
+#endif
 waklog_child_routine (void *data, child_info * pinfo)
 {
   int i;
