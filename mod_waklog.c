@@ -464,11 +464,11 @@ set_auth ( server_rec *s, request_rec *r, int self, char *principal, char *keyta
                 log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: krb5_get_init_creds_password %s",
                   error_message(kerror) );
                   /* nuke the password so it doesn't end up in core files */
-                  memset(k5secret, 0, sizeof(k5secret));               
+                  memset(k5secret, 0, strlen(k5secret));
                 goto cleanup;
         }
       
-        memset(k5secret, 0, sizeof(k5secret));      
+        memset(k5secret, 0, strlen(k5secret));
       }
 
       /* initialize the credentials cache and store the stuff we just got */
