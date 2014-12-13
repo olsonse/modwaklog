@@ -62,6 +62,11 @@ module AP_MODULE_DECLARE_DATA waklog_module;
 typedef struct { int dummy; } child_info;
 const char *userdata_key = "waklog_init"; 
 
+/* Apache 2.4 */
+#ifdef APLOG_USE_MODULE
+APLOG_USE_MODULE(waklog);
+#endif
+
 #endif /* APACHE2 */
 /**************************************************************************************************/
 
@@ -160,9 +165,15 @@ int renewcount = 0;
 #define getModConfig(P, X) P = (waklog_config *) ap_get_module_config( (X)->module_config, &waklog_module );
 
 
+#ifdef APLOG_USE_MODULE
+static void
+log_error (const char *file, int line, int module_index, int level, int status,
+           const server_rec * s, const char *fmt, ...)
+#else
 static void
 log_error (const char *file, int line, int level, int status,
            const server_rec * s, const char *fmt, ...)
+#endif
 {
   char errstr[4096];
   va_list ap;
@@ -172,7 +183,12 @@ log_error (const char *file, int line, int level, int status,
   va_end (ap);
 
 #ifdef APACHE2
+ #ifdef APLOG_USE_MODULE
+  /* Apache 2.4 */
+  ap_log_error (file, line, module_index, level | APLOG_NOERRNO, status, s, "%s", errstr);
+ #else
   ap_log_error (file, line, level | APLOG_NOERRNO, status, s, "(%d) %s", getpid(), errstr);
+ #endif
 #else
   ap_log_error (file, line, level | APLOG_NOERRNO, s, "(%d) %s", getpid(), errstr);
 #endif
