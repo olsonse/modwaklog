@@ -54,11 +54,6 @@ module waklog_module;
 #define MK_POOL apr_pool_t
 #define MK_TABLE_GET apr_table_get
 #define MK_TABLE_SET apr_table_set
-#include "unixd.h"
-extern unixd_config_rec unixd_config;
-#define ap_user_id        unixd_config.user_id
-#define ap_group_id       unixd_config.group_id
-#define ap_user_name      unixd_config.user_name
 #define command(name, func, var, type, usage)           \
   AP_INIT_ ## type (name, (void*) func,                 \
         NULL,     \
