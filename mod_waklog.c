@@ -79,6 +79,7 @@ APLOG_USE_MODULE(waklog);
 #include <afs/auth.h>
 #include <afs/dirpath.h>
 #include <afs/ptuser.h>
+#include <afs/com_err.h>
 #include <rx/rxkad.h>
 
 #define TKT_LIFE  ( 12 * 60 * 60 )
