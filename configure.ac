@@ -1,5 +1,6 @@
-AC_INIT(mod_waklog.c)
-AM_INIT_AUTOMAKE(mod_waklog_so,1.0)
+AC_INIT([mod_waklog], [1.1.0])
+AC_CONFIG_SRCDIR([mod_waklog.c])
+AM_INIT_AUTOMAKE
 AC_PROG_CC
 AC_PROG_INSTALL
 
