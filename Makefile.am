@@ -1,30 +1,25 @@
 all: mod_waklog.so
 
 APXS = @APXS@
-INCLUDES = -I@KRB5_INC@ -I@AFS_INC@ -I@APACHE_INC@ -I@APR_INC@
-LIB = -L@AFS_LIBS@ -L@KRB5_LIBS@ -L@APACHE_LIBS@ -lkrb5 -lk5crypto  \
-       -lafsauthent -lafsrpc -lkopenafs
+AM_CPPFLAGS = -I@KRB5_INC@ -I@AFS_INC@
+LIB = -L@AFS_LIBS@ -L@KRB5_LIBS@
+LIB += -lkrb5 -lk5crypto -lafsauthent -lafsrpc -lkopenafs
 
 APXSCC = `${APXS} -q CC` \
          @WAKLOG_DEBUG@ \
-         ${INCLUDES} \
+         -DVERSION=\"@VERSION@\" \
+         ${AM_CPPFLAGS} \
          -DEAPI -fPIC \
          -g \
-         `${APXS} -q CFLAGS`
+         `${APXS} -q CFLAGS` \
+         -I`${APXS} -q INCLUDEDIR` \
+         -I`${APXS} -q APR_INCLUDEDIR`
 
-VERSION: mod_waklog.c
-	date '+SVN_%Y%m%d' > VERSION
-
-version.o: version.c mod_waklog.c VERSION
-	${APXSCC} \
-	    -DVERSION=\"`cat VERSION`\" \
-	    -c version.c
-
-%.o: %.c
+.c.o:
 	${APXSCC} -c $< -o $@
-mod_waklog.so: mod_waklog.o lifetime.o version.o
-	${APXS} -c ${LIB} mod_waklog.o lifetime.o version.o
+
+mod_waklog.so: mod_waklog.o lifetime.o
+	${APXS} -c ${LIB} mod_waklog.o lifetime.o
 
 clean:
 	rm -f *.o *.so
-	rm -f mod_waklog.so

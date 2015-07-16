@@ -1,5 +1,8 @@
 Installation Instructions
 
+(Ideally this would be simplified by using `make dist`, but that currently
+doesn't work.)
+
 Type:
 
    ./regen.sh
@@ -12,6 +15,10 @@ Debian:
    chmod +x debian/rules
    fakeroot dpkg-buildpackage
 
+Release archive:
 
+   git archive -o mod_waklog-$VERSION.tgz --prefix=mod_waklog-$VERSION/ $VERSION
 
+RPM:
 
+   rpmbuild -ta mod_waklog-$VERSION.tgz

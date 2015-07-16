@@ -1,0 +1,13 @@
+/configure
+/config.log
+/config.status
+/aclocal.m4
+/autom4te.cache
+/compile
+/install-sh
+/missing
+/.libs
+Makefile
+Makefile.in
+*.o
+*.la

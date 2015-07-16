@@ -1,6 +1,6 @@
 AC_INIT([mod_waklog], [1.1.0])
 AC_CONFIG_SRCDIR([mod_waklog.c])
-AM_INIT_AUTOMAKE
+AM_INIT_AUTOMAKE([foreign])
 AC_PROG_CC
 AC_PROG_INSTALL
 
@@ -15,12 +15,6 @@ AC_ARG_WITH([afs-headers],
             [AFS_INC=$withval],
             [AFS_INC=/usr/include/afs])
 AC_SUBST(AFS_INC)
-
-AC_ARG_WITH([apr-headers],
-            [AC_HELP_STRING([--with-apr-headers],[path to apr headers])],
-            [APR_INC=$withval],
-            [APR_INC=/usr/include/apr-1])
-AC_SUBST(APR_INC)
 
 AC_ARG_WITH([krb5-libs],
             [AC_HELP_STRING([--with-krb5-libs],[path to krb5 libraries])],
@@ -39,12 +33,6 @@ AC_ARG_WITH([apache-libs],
             [APACHE_LIBS=$withval],
             [APACHE_LIBS=/usr/lib/])
 AC_SUBST(APACHE_LIBS)
-
-AC_ARG_WITH([apache-headers],
-            [AC_HELP_STRING([--with-apache-headers],[path to apache headers])],
-            [APACHE_INC=$withval],
-            [APACHE_INC=/usr/include/apache-1.3])
-AC_SUBST(APACHE_INC)
 
 AC_ARG_WITH([apxs],
             [AC_HELP_STRING([--with-apxs],[path to apxs])],

@@ -1270,7 +1270,6 @@ waklog_init_handler (apr_pool_t * p, apr_pool_t * plog,
                      apr_pool_t * ptemp, server_rec * s)
 {
   int rv;
-  extern char *version;
   apr_proc_t *proc;
   waklog_config *cfg;
   void *data;
@@ -1307,7 +1306,7 @@ waklog_init_handler (apr_pool_t * p, apr_pool_t * plog,
   else
     {
       log_error (APLOG_MARK, APLOG_INFO, 0, s,
-                 "mod_waklog: version %s initialized for cell %s", version, cfg->afs_cell);
+                 "mod_waklog: version %s initialized for cell %s", VERSION, cfg->afs_cell);
 
       if ( sharedspace ) {
         log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: shared memory already allocated." );
@@ -1418,7 +1417,6 @@ waklog_init_handler (apr_pool_t * p, apr_pool_t * plog,
 static void
 waklog_init (server_rec * s, MK_POOL * p)
 {
-  extern char *version;
   int pid;
   waklog_config *cfg;
   int fd = -1;
@@ -1430,7 +1428,7 @@ waklog_init (server_rec * s, MK_POOL * p)
 #endif
 
   log_error (APLOG_MARK, APLOG_DEBUG, 0, s,
-             "mod_waklog: version %s initialized.", version);
+             "mod_waklog: version %s initialized.", VERSION);
 
   if ( sharedspace ) {
     log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: shared memory already allocated." );

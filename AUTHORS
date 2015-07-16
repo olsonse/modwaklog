@@ -1,7 +1,19 @@
-Credit goes to:
+Original credits:
 
 Jarod Malestein <jarod@umich.edu>        Initial author
 Wesley Craig    <wes@umich.edu>          Initial author
 Derrick Brashear <shadow@dementia.org>   Apache2 support
 Sean Dilda <sean@duke.edu>               umich integration
 Adam Megacz <megacz@cs.berkeley.edu>     autoconf, debianization, maintainance
+
+Post-1.0, this is being maintained as an AUTHORS file for copyright purposes;
+see https://www.gnu.org/prep/maintain/html_node/Recording-Contributors.html. In
+particular, it is not for showing the purpose or time of changes, just which
+file parts were written or modified by whom, for non-trivial contributions.
+
+Russ Allbery, Jeffrey Altman:
+  rxkad-kdf support in mod_waklog.c
+Jacob Welsh <jwelsh@sinenomine.net>:
+  Many small fixes in mod_waklog.c
+  Cleanup of Makefile.am, configure.in/ac, regen.sh
+  New files mod_waklog.spec, waklog.conf, NEWS, .gitignore

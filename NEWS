@@ -1,0 +1,51 @@
+1.1.0
+-----
+
+General changes:
+
+* Apache 2.3 and 2.4 are now supported
+* rxkad-kdf is now supported for a DES-free KDC; the minimum required version
+  of OpenAFS is now 1.6.5
+* Compiler warnings and build errors on newer platforms have been fixed
+* The autoconf build system has been somewhat modernized and simplified
+* The three-part version number is now used consistently
+
+Security bugfixes:
+
+* Fixed a bug causing long passwords not to be fully cleared from memory
+* Fixed a possible NULL pointer dereference in error logging
+
+Contributors to this release include:
+
+* Jacob Welsh of Sine Nomine Associates (http://www.sinenomine.net/)
+* Russ Allbery and Jeffrey Altman (rxkad-kdf support)
+* Ryan Jud Hughes
+
+Older versions (former NOTES file)
+----------------------------------
+
+0.6.0:
+Initial release.
+
+0.7.0:
+Removed K4 code.
+Removed extraneous #if 0's.
+Fixed bug where mod_waklog crashed if KRB5CCNAME was null.
+
+0.8.0:
+Integrate Apache 2 support.
+
+Future releases:
+0.9.0:
+Add configuration directives for Apache conf files.
+Configure support.
+Remove ticket renewal code?  Make it an option?
+
+1.0.0:
+Features working properly.
+
+1.x.x:
+Things we haven't thought of yet.
+
+
+
