@@ -10,22 +10,6 @@ endif
 
 default:binary
 
-apache13:
-	dh_testdir
-	chmod +x regen.sh
-	./regen.sh
-	./configure \
-	  --with-afs-libs=/usr/lib/afs \
-	  --with-afs-headers=/usr/include/afs \
-	  --with-apxs=/usr/bin/apxs
-	make clean
-	$(MAKE)
-	dh_installdirs
-	mkdir -p debian/libapache-mod-waklog/usr/lib/apache/1.3/
-	mkdir -p debian/libapache-mod-waklog/etc/apache/conf.d/
-	cp mod_waklog.so debian/libapache-mod-waklog/usr/lib/apache/1.3/
-	cp debian/waklog.load debian/libapache-mod-waklog/etc/apache/conf.d/waklog.conf
-
 apache20:
 	dh_testdir
 	chmod +x regen.sh
@@ -33,7 +17,6 @@ apache20:
 	./configure \
 	  --with-afs-libs=/usr/lib/afs \
 	  --with-afs-headers=/usr/include/afs \
-	  --with-apache-headers=/usr/include/apache2 \
 	  --with-apxs=/usr/bin/apxs2
 	make clean
 	$(MAKE)
@@ -53,7 +36,7 @@ clean:
 
 binary-indep:
 
-binary-arch: apache13 apache20
+binary-arch: apache20
 	dh_testdir
 	dh_testroot
 	dh_installchangelogs 
@@ -61,7 +44,7 @@ binary-arch: apache13 apache20
 	dh_installexamples
 	dh_installman
 	dh_link
-	#dh_strip
+	dh_strip
 	dh_compress
 	dh_fixperms
 	dh_installdeb

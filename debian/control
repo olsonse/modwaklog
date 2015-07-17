@@ -1,18 +1,13 @@
 Source: libapache-mod-waklog
 Section: web
 Priority: optional
-Maintainer: Adam Megacz <megacz@cs.berkeley.edu>
-Build-Depends: apache-dev, apache2-prefork-dev, libkrb5-dev, autoconf, 
+Maintainer: Jacob Welsh <jwelsh@sinenomine.net>
+Build-Depends: apache2-prefork-dev, libkrb5-dev, autoconf,
  automake, libopenafs-dev
 Standards-Version: 3.6.1
 
-Package: libapache-mod-waklog
-Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, apache-common, krb5-config
-Description:  AFS Authentication for Apache
-
 Package: libapache2-mod-waklog
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, apache2-mpm-prefork, krb5-config
+Depends: ${shlibs:Depends}, ${misc:Depends}
 Description:  AFS Authentication for Apache2
 
