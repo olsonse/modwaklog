@@ -2,12 +2,15 @@ Source: libapache-mod-waklog
 Section: web
 Priority: optional
 Maintainer: Jacob Welsh <jwelsh@sinenomine.net>
-Build-Depends: apache2-prefork-dev, libkrb5-dev, autoconf,
+Build-Depends: debhelper (>= 8), apache2-prefork-dev, libkrb5-dev, autoconf,
  automake, libopenafs-dev
-Standards-Version: 3.6.1
+Standards-Version: 3.9.6
 
 Package: libapache2-mod-waklog
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
 Description:  AFS Authentication for Apache2
-
+ mod_waklog is an Apache module that provides aklog-like semantics for the web.
+ mod_waklog will acquire (and store in the kernel) an AFS credential when a
+ connection is opened, use the credential for the duration of the connection,
+ and will remove the credential when the connection is closed.

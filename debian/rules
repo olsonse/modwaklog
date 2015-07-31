@@ -8,9 +8,7 @@ else
 	CFLAGS += -O2
 endif
 
-default:binary
-
-apache20:
+build-apache2:
 	dh_testdir
 	chmod +x regen.sh
 	./regen.sh
@@ -26,17 +24,24 @@ apache20:
 	mkdir -p debian/libapache2-mod-waklog/etc/apache2/mods-available
 	cp mod_waklog.so debian/libapache2-mod-waklog/usr/lib/apache2/modules/
 	cp debian/waklog.load debian/libapache2-mod-waklog/etc/apache2/mods-available
+	touch build-apache2
 
 clean:
 	dh_testdir
 	dh_testroot
 	rm -rf build-stamp .libs
-	-$(MAKE) clean
+	[ ! -f Makefile ] || $(MAKE) clean
+	[ ! -f Makefile ] || $(MAKE) distclean
+	rm -f aclocal.m4 configure compile install-sh missing Makefile.in mod_waklog.la mod_waklog.so
 	dh_clean  --exclude ./_darcs/current/Makefile.orig --exclude ./Makefile.orig
 
-binary-indep:
+build: build-indep build-arch
+build-indep:
+build-arch: build-apache2
 
-binary-arch: apache20
+binary: binary-indep binary-arch
+binary-indep: build-indep
+binary-arch: build-arch
 	dh_testdir
 	dh_testroot
 	dh_installchangelogs 
@@ -53,5 +58,4 @@ binary-arch: apache20
 	dh_md5sums
 	dh_builddeb
 
-binary: binary-indep binary-arch
-.PHONY: build clean binary-indep binary-arch binary install configure
+.PHONY: build clean binary-indep binary-arch binary build-indep build-arch
