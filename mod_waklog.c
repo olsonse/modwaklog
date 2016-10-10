@@ -70,16 +70,17 @@ APLOG_USE_MODULE(waklog);
 #endif /* APACHE2 */
 /**************************************************************************************************/
 
+#include <afsconfig.h>
+#include <afs/param.h>
+#include <roken.h>
+
 #include <krb5.h>
 #include <kopenafs.h>
-
-#include <afs/param.h>
 
 #include <afs/venus.h>
 #include <afs/auth.h>
 #include <afs/dirpath.h>
-#include <afs/ptuser.h>
-#include <afs/com_err.h>
+#include <com_err.h>
 #include <rx/rxkad.h>
 
 #define TKT_LIFE  ( 12 * 60 * 60 )
@@ -610,25 +611,6 @@ set_auth ( server_rec *s, request_rec *r, int self, char *principal, char *keyta
     
     log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: preparing to init PTS connection for %s", server.cell);
     
-    /* fill out the AFS ID in the client name */
-    /* we've done a pr_Initialize in the child_init -- once, per process.  If you try to do it more
-     * strange things seem to happen. */
-     
-     {
-      afs_int32 viceId = 0;
- 
-      log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: making PTS call to look up %s", client.name);
-      
-      if ( ( rc = pr_SNameToId( client.name, &viceId ) ) == 0 ) {
-        snprintf( client.name, sizeof(client.name), "AFS ID %d", viceId );
-      } else {
-        log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: PTS call returned error %d ", rc);
-      }
-            
-      log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: PTS call returned %s ", client.name);
-      
-     }
-    
     log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: server: name %s, instance %s, cell %s",
       server.name, server.instance, server.cell );
       
@@ -1126,7 +1108,6 @@ waklog_child_init (server_rec * s, MK_POOL * p)
   }
 
   cell = strdup(cfg->afs_cell);
-  pr_Initialize(  0, AFSDIR_CLIENT_ETC_DIR, cell );
 
 #ifdef APACHE2
   apr_pool_cleanup_register(p, s, waklog_child_exit, apr_pool_cleanup_null);
@@ -1219,12 +1200,7 @@ waklog_child_routine (void *data, child_info * pinfo)
     log_error(APLOG_MARK, APLOG_ERR, 0, s, "mod_waklog: can't initialize in-memory credentials cache %d", code );
   }
   
-  log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: about to pr_Initialize");
-
-  /* need to do this so we can make PTS calls */
   cell = strdup(cfg->afs_cell); /* stupid */
-  pr_Initialize(  0, AFSDIR_CLIENT_ETC_DIR, cell );
- 
   log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: still here");
 
   while(1) {
@@ -1259,8 +1235,6 @@ waklog_child_routine (void *data, child_info * pinfo)
     }
     
   }
-
-  pr_End();
 
 }
 
