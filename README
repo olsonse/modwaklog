@@ -28,6 +28,11 @@ WaklogAFSCell
 
   Use the supplied AFS cell (required)
 
+WaklogLifetime
+
+  Lifetime in seconds to request for kerberos tickets/afs tokens
+  (default = 43200).
+
 WaklogEnabled 
 
   Enable waklog on a server, location, or directory basis

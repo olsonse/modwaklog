@@ -1,3 +1,9 @@
+1.1.1
+-----
+* Add WaklogLifetime directive to change lifetime to request for kerberos
+  tickets / afs tokens.
+* Minor update of debian pack info.
+
 1.1.0
 -----
 

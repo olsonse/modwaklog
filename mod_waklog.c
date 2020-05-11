@@ -103,6 +103,7 @@ typedef struct
   int usertokens;
   int cell_in_principal;
   int disable_token_cache;
+  int life_request;
   char *keytab;
   char *principal;
   char *default_principal;
@@ -432,7 +433,7 @@ set_auth ( server_rec *s, request_rec *r, int self, char *principal, char *keyta
     /* create the credentials options */
     
     krb5_get_init_creds_opt_init ( &kopts );
-    krb5_get_init_creds_opt_set_tkt_life ( &kopts, TKT_LIFE );
+    krb5_get_init_creds_opt_set_tkt_life ( &kopts, cfg->life_request == 0 ? TKT_LIFE : cfg->life_request );
     krb5_get_init_creds_opt_set_renew_life ( &kopts, 0 );
     krb5_get_init_creds_opt_set_forwardable ( &kopts, 0 );
     krb5_get_init_creds_opt_set_proxiable ( &kopts, 0 );
@@ -782,6 +783,7 @@ waklog_create_server_config (MK_POOL * p, server_rec * s)
   cfg->protect = WAKLOG_UNSET;
   cfg->usertokens = WAKLOG_UNSET;
   cfg->disable_token_cache = WAKLOG_UNSET;
+  cfg->life_request = 0; /* indicates that default should be used */
   cfg->keytab = NULL;
   cfg->principal = NULL;
   cfg->default_principal = NULL;
@@ -811,6 +813,7 @@ waklog_create_dir_config (MK_POOL * p, char *dir)
   cfg->protect = WAKLOG_UNSET;
   cfg->usertokens = WAKLOG_UNSET;
   cfg->disable_token_cache = WAKLOG_UNSET;
+  cfg->life_request = 0; /* indicates that default should be used */
   cfg->keytab = NULL;
   cfg->principal = NULL;
   cfg->default_principal = NULL;
@@ -836,6 +839,8 @@ static void *waklog_merge_dir_config(MK_POOL *p, void *parent_conf, void *newloc
   merged->usertokens = child->usertokens != WAKLOG_UNSET ? child->usertokens : parent->usertokens;
 
   merged->disable_token_cache = child->disable_token_cache != WAKLOG_UNSET ? child->disable_token_cache : parent->disable_token_cache;
+
+  merged->life_request = child->life_request != 0 ? child->life_request : parent->life_request ;
   
   merged->principal = child->principal != NULL ? child->principal : parent->principal;
   
@@ -882,6 +887,8 @@ static void *waklog_merge_server_config(MK_POOL *p, void *parent_conf, void *new
 
   merged->default_principal = nconf->default_principal == NULL ? ap_pstrdup(p, pconf->default_principal) : 
         ( nconf->default_principal == NULL ? NULL : ap_pstrdup(p, nconf->default_principal) );
+
+  merged->life_request = nconf->life_request == 0 ? pconf->life_request : nconf->life_request ;
   
   
   return (void *) merged;
@@ -969,6 +976,24 @@ set_waklog_afs_cell (cmd_parms * params, void *mconfig, char *file)
     waklog_mconfig->cell_in_principal = waklog_srvconfig->cell_in_principal;
     waklog_mconfig->afs_cell = ap_pstrdup (params->pool, file);
     waklog_mconfig->configured = 1;
+  }
+  return (NULL);
+}
+
+static const char *
+set_waklog_lifetime (cmd_parms * params, void *mconfig, char *life)
+{
+  waklog_config *waklog_mconfig = ( waklog_config * ) mconfig;
+  waklog_config *waklog_srvconfig =
+    ( waklog_config * ) ap_get_module_config(params->server->module_config, &waklog_module );
+
+  log_error (APLOG_MARK, APLOG_INFO, 0, params->server,
+             "mod_waklog: will request lifetime of %s s", life);
+
+  waklog_srvconfig->life_request = atoi (life);
+
+  if (waklog_mconfig != NULL) {
+    waklog_mconfig->life_request = atoi (life);
   }
   return (NULL);
 }
@@ -1143,6 +1168,9 @@ command_rec waklog_cmds[] = {
   command ("WaklogAFSCell", set_waklog_afs_cell, 0, TAKE1,
            "Use the supplied AFS cell (required)"),
 
+  command ("WaklogLifetime", set_waklog_lifetime, 0, TAKE1,
+           "Request kerberos tickets/tokens with a specific lifetime in seconds (optional)"),
+
   command ("WaklogAFSCellRealm", set_waklog_afs_cell_realm, 0, TAKE1,
            "Assume that the AFS cell belongs to the specified Kerberos realm (optional)"),
 
@@ -1200,12 +1228,14 @@ waklog_child_routine (void *data, child_info * pinfo)
   server_rec *s = (server_rec *) data;
   krb5_error_code code; 
   char *cell;
-  time_t sleep_time = ( TKT_LIFE / 2 ) ;
+  time_t sleep_time;
   time_t when;
   time_t left;
   waklog_config *cfg;
   
   getModConfig( cfg, s );
+
+  sleep_time = (cfg->life_request == 0 ? TKT_LIFE : cfg->life_request) / 2;
   
   log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "mod_waklog: waklog_child_routine started, running as %d", getuid());
   
